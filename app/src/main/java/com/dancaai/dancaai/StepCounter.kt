@@ -1,23 +1,27 @@
 package com.dancaai.app
 
-import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
+import kotlin.math.abs
 
-/**
- * Equivalente à lógica do notebook Python:
- *   - Monitora posição Y dos joelhos e X/Z dos pés
- *   - Detecta transferência de peso esquerda/direita
- *   - Conta passos e notifica quando completa 3 repetições
- */
 class StepCounter {
 
-    // Índices dos landmarks MediaPipe (mesmos do Python mp_pose.PoseLandmark)
     companion object {
         const val LEFT_KNEE = 25
         const val RIGHT_KNEE = 26
-        const val LEFT_FOOT_INDEX = 31
-        const val RIGHT_FOOT_INDEX = 32
-        const val THRESHOLD = 0.0007f   // mesmo valor do Python
+        const val LEFT_HIP = 23
+        const val RIGHT_HIP = 24
+
+        // Suavização — quantos frames considerar
+        const val SMOOTHING_WINDOW = 8
+
+        // Threshold dinâmico — % da distância entre quadris
+        const val THRESHOLD_RATIO = 0.15f
+
+        // Zona morta — precisa passar do threshold por esta margem extra
+        const val DEAD_ZONE_RATIO = 0.05f
+
+        // Confiança mínima do landmark
+        const val MIN_VISIBILITY = 0.5f
     }
 
     var counter: Int = 0
@@ -26,50 +30,71 @@ class StepCounter {
     var stage: String? = null
         private set
 
-    // Callback chamado quando completa 3 repetições
     var onThreeRepsCompleted: (() -> Unit)? = null
-
-    // Callback chamado a cada mudança de stage
     var onStageChanged: ((stage: String, counter: Int) -> Unit)? = null
+
+    // Buffer de suavização
+    private val kneeDiffBuffer = ArrayDeque<Float>(SMOOTHING_WINDOW)
+
+    // Estado interno para zona morta
+    private var lastConfirmedStage: String? = null
 
     fun process(result: PoseLandmarkerResult) {
         if (result.landmarks().isEmpty()) return
+        val landmarks = result.landmarks()[0]
 
-        val landmarks = result.landmarks()[0]  // primeira pessoa detectada
+        val leftKnee  = landmarks.getOrNull(LEFT_KNEE)  ?: return
+        val rightKnee = landmarks.getOrNull(RIGHT_KNEE) ?: return
+        val leftHip   = landmarks.getOrNull(LEFT_HIP)   ?: return
+        val rightHip  = landmarks.getOrNull(RIGHT_HIP)  ?: return
 
-        val kneey1 = landmarks.getOrNull(LEFT_KNEE)?.y() ?: return
-        val kneey2 = landmarks.getOrNull(RIGHT_KNEE)?.y() ?: return
+        // Verifica visibilidade mínima
+        if ((leftKnee.visibility().orElse(0f))  < MIN_VISIBILITY) return
+        if ((rightKnee.visibility().orElse(0f)) < MIN_VISIBILITY) return
 
-        // Lógica idêntica ao Python:
-        // if kneey1 > kneey2 + 0.0007 → transferência para esquerda
-        if (kneey1 > kneey2 + THRESHOLD) {
-            if (stage != "esquerda") {
-                counter++
-                stage = "esquerda"
-                checkReps()
-                onStageChanged?.invoke("esquerda", counter)
-            }
+        // Diferença bruta Y entre joelhos
+        val rawDiff = leftKnee.y() - rightKnee.y()
+
+        // Adiciona ao buffer de suavização
+        if (kneeDiffBuffer.size >= SMOOTHING_WINDOW) kneeDiffBuffer.removeFirst()
+        kneeDiffBuffer.addLast(rawDiff)
+
+        // Média suavizada
+        val smoothedDiff = kneeDiffBuffer.average().toFloat()
+
+        // Threshold dinâmico baseado na largura do quadril
+        val hipWidth = abs(leftHip.x() - rightHip.x())
+        val threshold = hipWidth * THRESHOLD_RATIO
+        val deadZone  = hipWidth * DEAD_ZONE_RATIO
+
+        // Determina novo stage com zona morta
+        val newStage = when {
+            smoothedDiff > threshold + deadZone  -> "esquerda"
+            smoothedDiff < -(threshold + deadZone) -> "direita"
+            else -> null  // zona neutra — não muda stage
         }
-        // if kneey1 + 0.0007 < kneey2 → transferência para direita
-        if (kneey1 + THRESHOLD < kneey2) {
-            if (stage != "direita") {
-                counter++
-                stage = "direita"
-                checkReps()
-                onStageChanged?.invoke("direita", counter)
-            }
+
+        // Só conta quando muda de stage confirmado
+        if (newStage != null && newStage != lastConfirmedStage) {
+            lastConfirmedStage = newStage
+            stage = newStage
+            counter++
+            checkReps()
+            onStageChanged?.invoke(newStage, counter)
         }
     }
 
     private fun checkReps() {
         if (counter == 4) {
             onThreeRepsCompleted?.invoke()
-            counter = 1  // reseta para 1 igual ao Python
+            counter = 1
         }
     }
 
     fun reset() {
         counter = 0
         stage = null
+        lastConfirmedStage = null
+        kneeDiffBuffer.clear()
     }
 }
