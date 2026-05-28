@@ -19,6 +19,7 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var poseLandmarkerHelper: PoseLandmarkerHelper
     private val stepCounter = StepCounter()
+    private var isFrontCamera = false
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -33,7 +34,6 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
 
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        // Configura callbacks do contador de passos
         stepCounter.onStageChanged = { stage, count ->
             runOnUiThread {
                 binding.tvCounter.text = count.toString()
@@ -46,7 +46,12 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
             }
         }
 
-        // Solicita permissão de câmera
+        // Botão alternar câmera
+        binding.fabSwitchCamera.setOnClickListener {
+            isFrontCamera = !isFrontCamera
+            startCamera()
+        }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -56,49 +61,19 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
         }
     }
 
-    // CAMERA FRONTAL
-   /* private fun startCamera() {
-        poseLandmarkerHelper = PoseLandmarkerHelper(context = this, listener = this)
-
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(binding.previewView.surfaceProvider)
-            }
-
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .build()
-                .also { analysis ->
-                    analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                        poseLandmarkerHelper.detectLiveStream(
-                            imageProxy = imageProxy,
-                            // 1. Alterado de false para true aqui:
-                            isFrontCamera = true
-                        )
-                    }
-                }
-
-            cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(
-                this,
-                // 2. Alterado de DEFAULT_BACK_CAMERA para DEFAULT_FRONT_CAMERA aqui:
-                CameraSelector.DEFAULT_FRONT_CAMERA,
-                preview,
-                imageAnalyzer
-            )
-        }, ContextCompat.getMainExecutor(this))
-    }*/
-
     private fun startCamera() {
-        poseLandmarkerHelper = PoseLandmarkerHelper(context = this, listener = this)
+        // Fecha o landmarker anterior antes de recriar
+        if (::poseLandmarkerHelper.isInitialized) {
+            poseLandmarkerHelper.clearPoseLandmarker()
+        }
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
+            cameraProvider.unbindAll()
+
+            // Só cria o novo landmarker depois de unbindAll
+            poseLandmarkerHelper = PoseLandmarkerHelper(context = this, listener = this)
 
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(binding.previewView.surfaceProvider)
@@ -112,40 +87,60 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
                     analysis.setAnalyzer(cameraExecutor) { imageProxy ->
                         poseLandmarkerHelper.detectLiveStream(
                             imageProxy = imageProxy,
-                            isFrontCamera = false
+                            isFrontCamera = isFrontCamera
                         )
                     }
                 }
 
-            cameraProvider.unbindAll()
+            val cameraSelector = if (isFrontCamera)
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            else
+                CameraSelector.DEFAULT_BACK_CAMERA
+
             cameraProvider.bindToLifecycle(
                 this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
+                cameraSelector,
                 preview,
                 imageAnalyzer
             )
         }, ContextCompat.getMainExecutor(this))
     }
-
-    // Chamado a cada frame processado pelo MediaPipe
     override fun onResults(resultBundle: PoseLandmarkerHelper.ResultBundle) {
         runOnUiThread {
-            // Atualiza o overlay com os landmarks desenhados
             binding.overlayView.setResults(
                 poseLandmarkerResults = resultBundle.results,
                 imageWidth = resultBundle.inputImageWidth,
-                imageHeight = resultBundle.inputImageHeight
+                imageHeight = resultBundle.inputImageHeight,
+                isFrontCamera = isFrontCamera
             )
-            // Processa a lógica de contagem de passos
             stepCounter.process(resultBundle.results)
+
+            // Calcula ângulos articulares
+            if (resultBundle.results.landmarks().isNotEmpty()) {
+                val landmarks = resultBundle.results.landmarks()[0]
+                val angles = AngleCalculator.compute(landmarks)
+                if (angles != null) {
+                    binding.overlayView.updateAngles(angles)
+                }
+            }
         }
     }
-
     override fun onError(error: String) {
         runOnUiThread {
             Toast.makeText(this, "Erro: $error", Toast.LENGTH_SHORT).show()
         }
     }
+
+
+    override fun onResume() {
+        super.onResume()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        }
+    }
+
 
     override fun onDestroy() {
         super.onDestroy()
