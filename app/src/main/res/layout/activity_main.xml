@@ -1,37 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- activity_main.xml -->
-<!-- Equivalente à janela cv2.imshow() do Python, com o HUD de REPS e STAGE -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- Botão alternar câmera -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fabSwitchCamera"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:src="@android:drawable/ic_menu_camera"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_margin="24dp"
-        app:tint="@android:color/white"/>
-
-    <!-- Preview da câmera -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent" >
 
-    <!-- Overlay do esqueleto MediaPipe (equivalente ao mp_drawing) -->
-    <com.dancaai.app.OverlayView
-        android:id="@+id/overlayView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        <com.dancaai.app.CameraGuideView
+            android:id="@+id/cameraGuideView"
+            android:layout_width="278dp"
+            android:layout_height="140dp"
+            android:layout_margin="8dp"
+            tools:visibility="visible" />
+    </androidx.camera.view.PreviewView>
 
-    <!-- HUD equivalente ao cv2.rectangle + putText do Python -->
     <LinearLayout
         android:layout_width="220dp"
         android:layout_height="wrap_content"
@@ -47,7 +35,6 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
-            <!-- REPS -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_weight="1"
@@ -71,7 +58,6 @@
                     android:layout_height="wrap_content"/>
             </LinearLayout>
 
-            <!-- STAGE -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_weight="1"
@@ -97,7 +83,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Mensagem de 3 reps concluídas (equivalente ao putText verde do Python) -->
     <TextView
         android:id="@+id/tvMessage"
         android:layout_width="wrap_content"
@@ -110,5 +95,31 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginBottom="32dp"/>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabSwitchCamera"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@android:drawable/ic_menu_camera"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_margin="24dp"
+        app:tint="@android:color/white"/>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabToggleGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@android:drawable/ic_menu_help"
+        app:layout_constraintBottom_toTopOf="@id/fabSwitchCamera"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="12dp"
+        app:tint="@android:color/white"/>
+
+    <com.dancaai.app.OverlayView
+        android:id="@+id/overlayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
