@@ -59,6 +59,10 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
         } else {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
+
+        binding.fabToggleGuide.setOnClickListener {
+            binding.cameraGuideView.toggleVisibility()
+        }
     }
 
     private fun startCamera() {
@@ -122,7 +126,15 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
                 if (angles != null) {
                     binding.overlayView.updateAngles(angles)
                 }
+                val postureResult = PostureValidator.validate(landmarks)
+                binding.overlayView.updatePosture(postureResult)
+
+                val guideResult = CameraGuide.evaluate(landmarks)
+                binding.cameraGuideView.update(guideResult)
             }
+
+
+
         }
     }
     override fun onError(error: String) {
