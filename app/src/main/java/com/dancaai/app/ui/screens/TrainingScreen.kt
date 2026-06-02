@@ -110,12 +110,14 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
     val rhythm = (80 + (cos(tick * 0.7) * 8).roundToInt()).coerceIn(0, 100)
 
     val cameraViewRef = remember { mutableStateOf<PoseCameraView?>(null) }
+    var poseUnavailable by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
         if (hasPermission) {
             AndroidView(
                 factory = { ctx ->
                     PoseCameraView(ctx).also {
+                        it.onPoseUnavailable = { poseUnavailable = true }
                         it.bind(lifecycleOwner)
                         cameraViewRef.value = it
                     }
@@ -150,6 +152,22 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                 contentDescription = "Alternar câmera",
                 onClick = { cameraViewRef.value?.switchCamera() },
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 92.dp, end = 16.dp),
+            )
+        }
+
+        // aviso: pose indisponível (ex.: emulador sem lib nativa)
+        if (poseUnavailable) {
+            Text(
+                "Detecção de pose indisponível neste dispositivo — use um celular físico.",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 88.dp, start = 24.dp, end = 24.dp)
+                    .clip(Shapes.pill)
+                    .background(Color(0xFF141418).copy(alpha = 0.82f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
 

@@ -41,6 +41,13 @@ class PoseCameraView @JvmOverloads constructor(
     /** Notifica se há (ou não) uma pessoa detectada no enquadramento. */
     var onPersonDetected: ((Boolean) -> Unit)? = null
 
+    /**
+     * Chamado quando a detecção de pose não pôde ser inicializada — tipicamente
+     * no emulador, onde o MediaPipe não tem biblioteca nativa para x86_64.
+     * Nesse caso a câmera segue funcionando, só sem o esqueleto.
+     */
+    var onPoseUnavailable: (() -> Unit)? = null
+
     init {
         addView(previewView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(overlayView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -65,7 +72,15 @@ class PoseCameraView @JvmOverloads constructor(
             val cameraProvider = providerFuture.get()
             cameraProvider.unbindAll()
 
-            poseHelper = PoseLandmarkerHelper(context = context, listener = this)
+            // A inicialização do MediaPipe pode falhar por falta de lib nativa
+            // (ex.: emulador x86_64). Tratamos para não derrubar o app — a câmera
+            // continua, apenas sem o esqueleto de pose.
+            poseHelper = try {
+                PoseLandmarkerHelper(context = context, listener = this)
+            } catch (t: Throwable) {
+                onPoseUnavailable?.invoke()
+                null
+            }
 
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -115,9 +130,11 @@ class PoseCameraView @JvmOverloads constructor(
     }
 
     fun release() {
-        poseHelper?.clearPoseLandmarker()
-        poseHelper = null
-        if (!cameraExecutor.isShutdown) cameraExecutor.shutdown()
-        ProcessCameraProvider.getInstance(context).get().unbindAll()
+        runCatching {
+            poseHelper?.clearPoseLandmarker()
+            poseHelper = null
+            if (!cameraExecutor.isShutdown) cameraExecutor.shutdown()
+            ProcessCameraProvider.getInstance(context).get().unbindAll()
+        }
     }
 }
