@@ -12,7 +12,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.dancaai.app.ui.components.BottomNav
 import com.dancaai.app.ui.components.DcaTab
+import com.dancaai.app.ui.screens.HistoryScreen
+import com.dancaai.app.ui.screens.HomeScreen
+import com.dancaai.app.ui.screens.OnboardingScreen
 import com.dancaai.app.ui.screens.PlaceholderScreen
+import com.dancaai.app.ui.screens.ProfileScreen
+import com.dancaai.app.ui.screens.ResultsScreen
+import com.dancaai.app.ui.screens.SessionScreen
 import com.dancaai.app.ui.theme.DancaAITheme
 import com.dancaai.app.ui.theme.DcaTheme
 
@@ -50,10 +56,8 @@ fun DancaApp() {
                 modifier = Modifier.padding(padding),
             ) {
                 composable(Routes.ONBOARDING) {
-                    PlaceholderScreen(
-                        title = "Onboarding",
-                        primaryLabel = "Começar",
-                        onPrimary = {
+                    OnboardingScreen(
+                        onFinish = {
                             navController.navigate(Routes.HOME) {
                                 popUpTo(Routes.ONBOARDING) { inclusive = true }
                             }
@@ -61,19 +65,28 @@ fun DancaApp() {
                     )
                 }
                 composable(Routes.HOME) {
-                    PlaceholderScreen(
-                        title = "Início",
-                        primaryLabel = "Iniciar Treino",
-                        onPrimary = { navController.navigate(Routes.SESSION) },
+                    HomeScreen(
+                        onStartTraining = { navController.navigate(Routes.SESSION) },
+                        onSeeHistory = {
+                            navController.navigate(Routes.HISTORY) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onOpenProfile = {
+                            navController.navigate(Routes.PROFILE) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                     )
                 }
                 composable(Routes.SESSION) {
-                    PlaceholderScreen(
-                        title = "Configurar Sessão",
-                        primaryLabel = "Começar",
-                        onPrimary = { navController.navigate(Routes.TRAINING) },
-                        secondaryLabel = "Voltar",
-                        onSecondary = { navController.popBackStack() },
+                    SessionScreen(
+                        onBack = { navController.popBackStack() },
+                        onStart = { navController.navigate(Routes.TRAINING) },
                     )
                 }
                 composable(Routes.TRAINING) {
@@ -88,28 +101,19 @@ fun DancaApp() {
                     )
                 }
                 composable(Routes.RESULTS) {
-                    PlaceholderScreen(
-                        title = "Resultado",
-                        primaryLabel = "Treinar novamente",
-                        onPrimary = {
-                            navController.navigate(Routes.SESSION) {
-                                popUpTo(Routes.HOME)
-                            }
+                    ResultsScreen(
+                        onAgain = {
+                            navController.navigate(Routes.SESSION) { popUpTo(Routes.HOME) }
                         },
-                        secondaryLabel = "Início",
-                        onSecondary = {
+                        onHome = {
                             navController.navigate(Routes.HOME) {
                                 popUpTo(Routes.HOME) { inclusive = true }
                             }
                         },
                     )
                 }
-                composable(Routes.HISTORY) {
-                    PlaceholderScreen(title = "Histórico")
-                }
-                composable(Routes.PROFILE) {
-                    PlaceholderScreen(title = "Perfil")
-                }
+                composable(Routes.HISTORY) { HistoryScreen() }
+                composable(Routes.PROFILE) { ProfileScreen() }
             }
         }
     }
