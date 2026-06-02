@@ -33,7 +33,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -93,13 +96,23 @@ fun OnboardingScreen(onFinish: () -> Unit, modifier: Modifier = Modifier) {
 
 @Composable
 private fun OnboardSlide1() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        BrandMark(size = 108)
-        Spacer(Modifier.height(28.dp))
+    val accent = DcaTheme.colors.accent
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+        // glow radial atrás da marca
+        Box(
+            modifier = Modifier
+                .size(320.dp)
+                .blur(48.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Brush.radialGradient(listOf(accent.copy(alpha = 0.45f), Color.Transparent))),
+        )
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            BrandMark(size = 108)
+            Spacer(Modifier.height(28.dp))
         Text(
             "Dança AI",
             style = MaterialTheme.typography.displayLarge,
@@ -113,6 +126,7 @@ private fun OnboardSlide1() {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 12.dp).width(280.dp),
         )
+        }
     }
 }
 

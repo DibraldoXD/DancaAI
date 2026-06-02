@@ -26,7 +26,14 @@ import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +60,13 @@ import com.dancaai.app.ui.theme.scoreColor
 fun ResultsScreen(onAgain: () -> Unit, onHome: () -> Unit, modifier: Modifier = Modifier) {
     val colors = DcaTheme.colors
     val r = MockRepository.lastResult
+    var play by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { play = true }
+    val animScore by animateIntAsState(
+        targetValue = if (play) r.total else 0,
+        animationSpec = tween(1000),
+        label = "totalScore",
+    )
 
     Column(modifier = modifier.fillMaxSize().background(colors.bg)) {
         DcaTopBar(
@@ -67,7 +81,7 @@ fun ResultsScreen(onAgain: () -> Unit, onHome: () -> Unit, modifier: Modifier = 
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp)) {
                 CircleScore(value = r.total) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("${r.total}", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold, fontSize = 64.sp, color = scoreColor(r.total))
+                        Text("$animScore", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold, fontSize = 64.sp, color = scoreColor(r.total))
                         Text("SCORE GERAL", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVar)
                     }
                 }

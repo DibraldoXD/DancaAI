@@ -8,7 +8,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -120,6 +127,13 @@ fun CircleScore(
 ) {
     val track = DcaTheme.colors.surface2
     val ring = com.dancaai.app.ui.theme.scoreColor(value)
+    var play by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { play = true }
+    val sweep by animateFloatAsState(
+        targetValue = if (play) (value / 100f) * 360f else 0f,
+        animationSpec = tween(1000),
+        label = "scoreSweep",
+    )
     Box(contentAlignment = Alignment.Center, modifier = modifier.size(diameter.dp)) {
         Canvas(modifier = Modifier.fillMaxWidth().size(diameter.dp)) {
             val stroke = 10.dp.toPx()
@@ -131,7 +145,7 @@ fun CircleScore(
                 topLeft = topLeft, size = arcSize, style = Stroke(width = stroke),
             )
             drawArc(
-                color = ring, startAngle = -90f, sweepAngle = (value / 100f) * 360f, useCenter = false,
+                color = ring, startAngle = -90f, sweepAngle = sweep, useCenter = false,
                 topLeft = topLeft, size = arcSize, style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
         }

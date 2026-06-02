@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -57,10 +60,12 @@ import com.dancaai.app.camera.PoseCameraView
 import com.dancaai.app.data.MockRepository
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
+import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
 import com.dancaai.app.ui.theme.scoreColor
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -238,7 +243,7 @@ private fun TimerControl(elapsed: Int, paused: Boolean, onPause: () -> Unit) {
                 Modifier
                     .fillMaxWidth((elapsed.toFloat() / TOTAL_SECONDS).coerceIn(0f, 1f))
                     .height(3.dp)
-                    .background(scoreColor(80)),
+                    .background(DcaTheme.colors.accent),
             )
         }
     }
@@ -246,14 +251,10 @@ private fun TimerControl(elapsed: Int, paused: Boolean, onPause: () -> Unit) {
 
 @Composable
 private fun RhythmIndicator(beat: Int, bpm: Int, paused: Boolean) {
+    val accent = DcaTheme.colors.accent
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
         Text("BEAT", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
-        Box(
-            modifier = Modifier
-                .size(if (!paused && beat % 2 == 0) 16.dp else 12.dp)
-                .clip(CircleShape)
-                .background(scoreColor(80)),
-        )
+        BeatDot(beat = beat, paused = paused, accent = accent)
         Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             repeat(16) { i ->
                 val lit = (beat + i) % 4 == 0
@@ -262,11 +263,42 @@ private fun RhythmIndicator(beat: Int, bpm: Int, paused: Boolean) {
                         .weight(1f)
                         .height(if (lit) 14.dp else 6.dp)
                         .clip(Shapes.sm)
-                        .background(if (lit) scoreColor(80) else Color.White.copy(alpha = 0.2f)),
+                        .background(if (lit) accent else Color.White.copy(alpha = 0.2f)),
                 )
             }
         }
         Text("$bpm bpm", fontFamily = MonoFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
+    }
+}
+
+/** Ponto do beat: a cada batida pulsa (escala) e emite um anel que se expande. */
+@Composable
+private fun BeatDot(beat: Int, paused: Boolean, accent: Color) {
+    val scale = remember { Animatable(1f) }
+    val ring = remember { Animatable(0f) }
+    LaunchedEffect(beat, paused) {
+        if (paused) return@LaunchedEffect
+        launch { scale.snapTo(1.5f); scale.animateTo(1f, tween(400)) }
+        ring.snapTo(0f); ring.animateTo(1f, tween(450))
+    }
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(22.dp)) {
+        Box(
+            Modifier
+                .size(16.dp)
+                .graphicsLayer {
+                    val s = 1f + ring.value * 1.2f
+                    scaleX = s; scaleY = s; alpha = 1f - ring.value
+                }
+                .clip(CircleShape)
+                .border(1.5.dp, accent, CircleShape),
+        )
+        Box(
+            Modifier
+                .size(16.dp)
+                .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+                .clip(CircleShape)
+                .background(accent),
+        )
     }
 }
 
@@ -291,7 +323,7 @@ private fun ContextualToast(tick: Int) {
             .border(1.dp, Color.White.copy(alpha = 0.08f), Shapes.pill)
             .padding(start = 14.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        Icon(t.icon, contentDescription = null, tint = scoreColor(80), modifier = Modifier.size(20.dp))
+        Icon(t.icon, contentDescription = null, tint = DcaTheme.colors.accent, modifier = Modifier.size(20.dp))
         Text(t.text, style = MaterialTheme.typography.bodyLarge, color = Color.White)
     }
 }
