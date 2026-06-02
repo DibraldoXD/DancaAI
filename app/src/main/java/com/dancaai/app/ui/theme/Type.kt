@@ -8,9 +8,11 @@ import androidx.compose.ui.unit.sp
 
 // ─────────────────────────────────────────────────────────────
 // Tipografia. O design usa Inter (UI) + JetBrains Mono (números/score).
-// TODO(Fase 5): empacotar as fontes Inter e JetBrains Mono em res/font
-//   e trocar UiFontFamily/MonoFontFamily. Por ora usamos as fontes do
-//   sistema (Roboto ≈ Inter) para manter o app 100% offline e sem binários.
+// Por decisão do projeto, usamos as fontes do sistema (Roboto ≈ Inter).
+// Para adotar Inter/JetBrains Mono no futuro: coloque os .ttf em
+// res/font e troque UiFontFamily/MonoFontFamily por
+//   FontFamily(Font(R.font.inter_regular), Font(R.font.inter_medium, FontWeight.Medium), ...)
+// (mantém o app 100% offline, sem rede).
 // ─────────────────────────────────────────────────────────────
 val UiFontFamily = FontFamily.Default
 val MonoFontFamily = FontFamily.Monospace
