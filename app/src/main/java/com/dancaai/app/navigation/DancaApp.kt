@@ -15,10 +15,10 @@ import com.dancaai.app.ui.components.DcaTab
 import com.dancaai.app.ui.screens.HistoryScreen
 import com.dancaai.app.ui.screens.HomeScreen
 import com.dancaai.app.ui.screens.OnboardingScreen
-import com.dancaai.app.ui.screens.PlaceholderScreen
 import com.dancaai.app.ui.screens.ProfileScreen
 import com.dancaai.app.ui.screens.ResultsScreen
 import com.dancaai.app.ui.screens.SessionScreen
+import com.dancaai.app.ui.screens.TrainingScreen
 import com.dancaai.app.ui.theme.DancaAITheme
 import com.dancaai.app.ui.theme.DcaTheme
 
@@ -90,14 +90,13 @@ fun DancaApp() {
                     )
                 }
                 composable(Routes.TRAINING) {
-                    PlaceholderScreen(
-                        title = "Treino",
-                        primaryLabel = "Encerrar sessão",
-                        onPrimary = {
+                    TrainingScreen(
+                        onEnd = {
                             navController.navigate(Routes.RESULTS) {
-                                popUpTo(Routes.HOME)
+                                popUpTo(Routes.TRAINING) { inclusive = true }
                             }
                         },
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable(Routes.RESULTS) {
