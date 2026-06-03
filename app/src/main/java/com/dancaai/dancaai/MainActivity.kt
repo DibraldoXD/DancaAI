@@ -45,18 +45,19 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
                 binding.tvMessage.text = "3 REPS CONCLUÍDAS!"
             }
         }
+        stepCounter.onWeightInfoChanged = { info ->
+            binding.overlayView.updateWeightInfo(info)
+        }
 
-        // Botão alternar câmera
         binding.fabSwitchCamera.setOnClickListener {
             isFrontCamera = !isFrontCamera
             startCamera()
         }
 
+        // Solicita permissão se ainda não concedida; câmera inicia via onResume
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED
+            != PackageManager.PERMISSION_GRANTED
         ) {
-            startCamera()
-        } else {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
 
@@ -66,7 +67,6 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
     }
 
     private fun startCamera() {
-        // Fecha o landmarker anterior antes de recriar
         if (::poseLandmarkerHelper.isInitialized) {
             poseLandmarkerHelper.clearPoseLandmarker()
         }
@@ -76,7 +76,6 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
             val cameraProvider = cameraProviderFuture.get()
             cameraProvider.unbindAll()
 
-            // Só cria o novo landmarker depois de unbindAll
             poseLandmarkerHelper = PoseLandmarkerHelper(context = this, listener = this)
 
             val preview = Preview.Builder().build().also {
@@ -101,14 +100,15 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
             else
                 CameraSelector.DEFAULT_BACK_CAMERA
 
-            cameraProvider.bindToLifecycle(
-                this,
-                cameraSelector,
-                preview,
-                imageAnalyzer
-            )
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+
+            runOnUiThread {
+                binding.hudRepsStage.visibility = android.view.View.GONE
+                binding.tvMessage.visibility    = android.view.View.GONE
+            }
         }, ContextCompat.getMainExecutor(this))
     }
+
     override fun onResults(resultBundle: PoseLandmarkerHelper.ResultBundle) {
         runOnUiThread {
             binding.overlayView.setResults(
@@ -119,30 +119,28 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
             )
             stepCounter.process(resultBundle.results)
 
-            // Calcula ângulos articulares
             if (resultBundle.results.landmarks().isNotEmpty()) {
                 val landmarks = resultBundle.results.landmarks()[0]
+
                 val angles = AngleCalculator.compute(landmarks)
-                if (angles != null) {
-                    binding.overlayView.updateAngles(angles)
-                }
+                if (angles != null) binding.overlayView.updateAngles(angles)
+
                 val postureResult = PostureValidator.validate(landmarks)
                 binding.overlayView.updatePosture(postureResult)
+
+                binding.overlayView.updateDebugLandmarks(landmarks)
 
                 val guideResult = CameraGuide.evaluate(landmarks)
                 binding.cameraGuideView.update(guideResult)
             }
-
-
-
         }
     }
+
     override fun onError(error: String) {
         runOnUiThread {
             Toast.makeText(this, "Erro: $error", Toast.LENGTH_SHORT).show()
         }
     }
-
 
     override fun onResume() {
         super.onResume()

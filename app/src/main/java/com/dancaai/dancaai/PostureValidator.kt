@@ -11,8 +11,9 @@ object PostureValidator {
     private const val RIGHT_HIP      = 24
 
     // Thresholds ajustáveis
-    private const val SHOULDER_LEVEL_THRESHOLD = 0.03f  // diferença Y máxima para considerar nivelado
-    private const val SHOULDER_FORWARD_THRESHOLD = 0.05f // diferença Z para ombros encurvados
+    private const val SHOULDER_LEVEL_THRESHOLD   = 1.0f  // desativado temporariamente
+    private const val SHOULDER_FORWARD_THRESHOLD = 0.23f // diferença Z para ombros encurvados
+    private const val MIN_FRONTAL_SPAN           = 0.15f // span mínimo para confiar no eixo Z
 
     fun validate(landmarks: List<NormalizedLandmark>): PostureResult {
         if (landmarks.size < 25) return PostureResult.Unknown
@@ -48,14 +49,16 @@ object PostureValidator {
         }
 
         // 2. Verifica ombros encurvados (eixo Z)
-        // Z negativo = mais próximo da câmera
-        // Se ombros têm Z muito mais negativo que quadril = encurvado para frente
-        val avgShoulderZ = (leftShoulder.z() + rightShoulder.z()) / 2f
-        val avgHipZ      = (leftHip.z() + rightHip.z()) / 2f
+        // Só confiável em vista frontal — ignorar quando o usuário está de lado
+        val shoulderSpan = kotlin.math.abs(rightShoulder.x() - leftShoulder.x())
+        if (shoulderSpan >= MIN_FRONTAL_SPAN) {
+            val avgShoulderZ = (leftShoulder.z() + rightShoulder.z()) / 2f
+            val avgHipZ      = (leftHip.z() + rightHip.z()) / 2f
 
-        if (avgShoulderZ - avgHipZ < -SHOULDER_FORWARD_THRESHOLD) {
-            issues.add("OMBROS ENCURVADOS")
-            status = PostureStatus.WARNING
+            if (avgShoulderZ - avgHipZ < -SHOULDER_FORWARD_THRESHOLD) {
+                issues.add("OMBROS ENCURVADOS")
+                status = PostureStatus.WARNING
+            }
         }
 
         // 3. Verifica alinhamento lateral (ombros centralizados sobre quadril)
@@ -63,7 +66,7 @@ object PostureValidator {
         val hipMidX      = (leftHip.x() + rightHip.x()) / 2f
         val lateralDiff  = shoulderMidX - hipMidX
 
-        if (kotlin.math.abs(lateralDiff) > 0.05f) {
+        if (kotlin.math.abs(lateralDiff) > 0.5f) {
             val side = if (lateralDiff > 0) "ESQUERDA" else "DIREITA"
             issues.add("TRONCO INCLINADO PARA $side")
             status = PostureStatus.WARNING

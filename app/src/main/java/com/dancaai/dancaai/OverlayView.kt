@@ -17,6 +17,8 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
     private var isFrontCamera: Boolean = false
     private var angles: BodyAngles? = null
     private var postureResult: PostureResult = PostureResult.Unknown
+    private var debugLandmarks: List<NormalizedLandmark>? = null
+    private var weightInfo: WeightInfo = WeightInfo(WeightLeg.NEUTRAL, MovementDirection.NEUTRAL, false, 0, 0)
 
     // ── Paints ──────────────────────────────────────────────────────────────
 
@@ -65,6 +67,56 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         style = Paint.Style.FILL
     }
 
+    private val weightBgPaint = Paint().apply {
+        color = Color.argb(160, 0, 0, 0)
+        style = Paint.Style.FILL
+    }
+
+    private val weightLegPaint = Paint().apply {
+        textSize = 52f
+        typeface = Typeface.DEFAULT_BOLD
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+    }
+
+    private val weightDirPaint = Paint().apply {
+        textSize = 64f
+        typeface = Typeface.DEFAULT_BOLD
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+    }
+
+    private val weightErrorPaint = Paint().apply {
+        color = Color.rgb(255, 60, 60)
+        textSize = 36f
+        typeface = Typeface.DEFAULT_BOLD
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+    }
+
+    private val weightCounterPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = 32f
+        typeface = Typeface.DEFAULT_BOLD
+        setShadowLayer(3f, 1f, 1f, Color.BLACK)
+    }
+
+    private val debugBgPaint = Paint().apply {
+        color = Color.argb(170, 0, 0, 0)
+        style = Paint.Style.FILL
+    }
+
+    private val debugTextPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = 24f
+        typeface = Typeface.MONOSPACE
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
+    }
+
+    private val debugLabelPaint = Paint().apply {
+        color = Color.CYAN
+        textSize = 24f
+        typeface = Typeface.MONOSPACE
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+    }
+
     // ── Métodos públicos ─────────────────────────────────────────────────────
 
     fun setResults(
@@ -90,10 +142,25 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         invalidate()
     }
 
+    fun updateDebugLandmarks(landmarks: List<NormalizedLandmark>) {
+        this.debugLandmarks = landmarks
+        invalidate()
+    }
+
+    fun updateWeightInfo(info: WeightInfo) {
+        weightInfo = info
+        invalidate()
+    }
+
     // ── Desenho ──────────────────────────────────────────────────────────────
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        // Painel de debug sempre visível, independente de pose detectada
+        drawDebugPanel(canvas)
+        drawWeightPanel(canvas)
+
         val results = results ?: return
         if (results.landmarks().isEmpty()) return
 
@@ -172,7 +239,123 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
                     )
                 }
             }
-            else -> { /* Unknown - não exibe nada */ }
+            is PostureResult.Unknown -> {
+                canvas.drawText(
+                    "Aguardando pose...",
+                    width * 0.5f - 160f,
+                    height * 0.93f,
+                    anglePaint
+                )
+            }
+        }
+
+    }
+
+    private fun drawWeightPanel(canvas: Canvas) {
+        val info = weightInfo
+
+        val legText = when (info.leg) {
+            WeightLeg.LEFT    -> "ESQUERDA"
+            WeightLeg.RIGHT   -> "DIREITA"
+            WeightLeg.NEUTRAL -> "NEUTRO"
+        }
+        val legColor = when (info.leg) {
+            WeightLeg.LEFT    -> Color.rgb(64,  196, 255)
+            WeightLeg.RIGHT   -> Color.rgb(255, 180, 50)
+            WeightLeg.NEUTRAL -> Color.rgb(200, 200, 200)
+        }
+        val dirSymbol = when (info.direction) {
+            MovementDirection.LEFT    -> "←"
+            MovementDirection.RIGHT   -> "→"
+            MovementDirection.UP      -> "↑"
+            MovementDirection.DOWN    -> "↓"
+            MovementDirection.NEUTRAL -> "•"
+        }
+
+        val padH  = 16f
+        val padV  = 12f
+        val lineH = 56f
+        val panelW = 340f
+        val linesCount = if (info.showError) 3 else 2
+        val panelH = linesCount * lineH + padV * 2
+        val left = 8f
+        val top  = 8f
+
+        canvas.drawRoundRect(
+            RectF(left, top, left + panelW, top + panelH),
+            12f, 12f, weightBgPaint
+        )
+
+        // Linha 1: perna + seta
+        weightLegPaint.color = legColor
+        canvas.drawText(legText, left + padH, top + padV + lineH * 0.82f, weightLegPaint)
+        weightDirPaint.color = legColor
+        canvas.drawText(dirSymbol, left + panelW - padH - 64f, top + padV + lineH * 0.82f, weightDirPaint)
+
+        // Linha 2: contadores
+        canvas.drawText(
+            "✓ ${info.correctCount}    ✗ ${info.errorCount}",
+            left + padH, top + padV + lineH * 1.82f, weightCounterPaint
+        )
+
+        // Linha 3: aviso de erro (somente quando ativo)
+        if (info.showError) {
+            canvas.drawText(
+                "⚠ MARCAÇÃO INCORRETA",
+                left + padH, top + padV + lineH * 2.82f, weightErrorPaint
+            )
+        }
+    }
+
+    private fun drawDebugPanel(canvas: Canvas) {
+        data class Row(val label: String, val idx: Int)
+        val rows = listOf(
+            Row("NAR  ", 0),
+            Row("ORE-E", 7),  Row("ORE-D", 8),
+            Row("OMB-E", 11), Row("OMB-D", 12),
+            Row("QDR-E", 23), Row("QDR-D", 24),
+            Row("JOE-E", 25), Row("JOE-D", 26),
+            Row("TRN-E", 27), Row("TRN-D", 28),
+        )
+
+        val lineH  = 28f
+        val panelW = 430f
+        val panelH = (rows.size + 1) * lineH + 44f  // +1 para linha derivada
+        val left   = width - panelW - 8f
+        val top    = 8f
+
+        canvas.drawRoundRect(
+            RectF(left, top, left + panelW, top + panelH),
+            8f, 8f, debugBgPaint
+        )
+
+        rows.forEachIndexed { i, row ->
+            val lmk = debugLandmarks?.getOrNull(row.idx)
+            val y   = top + 28f + i * lineH
+            canvas.drawText("${row.label}:", left + 8f, y, debugLabelPaint)
+            val value = if (lmk != null)
+                "x=%.3f y=%.3f z=%.3f".format(lmk.x(), lmk.y(), lmk.z())
+            else
+                "aguardando..."
+            canvas.drawText(value, left + 90f, y, debugTextPaint)
+        }
+
+        // Linha de métricas derivadas para diagnóstico Z
+        val lm = debugLandmarks
+        val yD = top + 28f + rows.size * lineH + 6f
+        canvas.drawText("CALC :", left + 8f, yD, debugLabelPaint)
+        if (lm != null && lm.size >= 25) {
+            val lS    = lm[11]; val rS = lm[12]
+            val lH    = lm[23]; val rH = lm[24]
+            val span  = kotlin.math.abs(rS.x() - lS.x())
+            val zDiff = (lS.z() + rS.z()) / 2f - (lH.z() + rH.z()) / 2f
+            val normZ = if (span > 0.01f) zDiff / span else 0f
+            canvas.drawText(
+                "span=%.3f  Zdiff=%.3f  norm=%.2f".format(span, zDiff, normZ),
+                left + 90f, yD, debugTextPaint
+            )
+        } else {
+            canvas.drawText("aguardando...", left + 90f, yD, debugTextPaint)
         }
     }
 

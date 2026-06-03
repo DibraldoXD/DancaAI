@@ -14,6 +14,7 @@ import com.dancaai.app.AngleCalculator
 import com.dancaai.app.OverlayView
 import com.dancaai.app.PoseLandmarkerHelper
 import com.dancaai.app.PostureValidator
+import com.dancaai.app.StepCounter
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -30,8 +31,9 @@ class PoseCameraView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : FrameLayout(context, attrs), PoseLandmarkerHelper.LandmarkerListener {
 
-    private val previewView = PreviewView(context)
-    private val overlayView = OverlayView(context, null)
+    private val previewView  = PreviewView(context)
+    private val overlayView  = OverlayView(context, null)
+    private val stepCounter  = StepCounter()
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private var poseHelper: PoseLandmarkerHelper? = null
@@ -40,6 +42,10 @@ class PoseCameraView @JvmOverloads constructor(
 
     /** Notifica se há (ou não) uma pessoa detectada no enquadramento. */
     var onPersonDetected: ((Boolean) -> Unit)? = null
+
+    /** Último frame de landmarks detectado; null quando nenhuma pessoa está no enquadramento. */
+    var currentLandmarks: List<com.google.mediapipe.tasks.components.containers.NormalizedLandmark>? = null
+        private set
 
     /**
      * Chamado quando a detecção de pose não pôde ser inicializada — tipicamente
@@ -51,6 +57,7 @@ class PoseCameraView @JvmOverloads constructor(
     init {
         addView(previewView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(overlayView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        stepCounter.onWeightInfoChanged = { info -> overlayView.updateWeightInfo(info) }
     }
 
     fun bind(owner: LifecycleOwner) {
@@ -114,13 +121,16 @@ class PoseCameraView @JvmOverloads constructor(
                 imageHeight = resultBundle.inputImageHeight,
                 isFrontCamera = isFrontCamera,
             )
+            stepCounter.process(resultBundle.results)
             val landmarks = resultBundle.results.landmarks()
             val hasPerson = landmarks.isNotEmpty()
             onPersonDetected?.invoke(hasPerson)
+            currentLandmarks = if (hasPerson) landmarks[0] else null
             if (hasPerson) {
                 val first = landmarks[0]
                 AngleCalculator.compute(first)?.let { overlayView.updateAngles(it) }
                 overlayView.updatePosture(PostureValidator.validate(first))
+                overlayView.updateDebugLandmarks(first)
             }
         }
     }
@@ -130,6 +140,7 @@ class PoseCameraView @JvmOverloads constructor(
     }
 
     fun release() {
+        stepCounter.reset()
         runCatching {
             poseHelper?.clearPoseLandmarker()
             poseHelper = null

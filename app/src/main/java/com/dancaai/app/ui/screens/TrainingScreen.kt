@@ -4,9 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,56 +18,120 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.FlipCameraAndroid
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.RotateRight
 import androidx.compose.material.icons.rounded.StopCircle
-import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.DisposableEffect
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import android.widget.Toast
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.dancaai.app.camera.PoseCameraView
-import com.dancaai.app.data.MockRepository
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
-import com.dancaai.app.ui.theme.scoreColor
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.roundToInt
-import kotlin.math.sin
 
 private const val TOTAL_SECONDS = 5 * 60
+
+private data class LandmarkXYZ(val x: Float, val y: Float, val z: Float)
+
+private data class DebugSnapshot(
+    val number:         Int,
+    val nose:           LandmarkXYZ,
+    val leftEar:        LandmarkXYZ,
+    val rightEar:       LandmarkXYZ,
+    val leftShoulder:   LandmarkXYZ,
+    val rightShoulder:  LandmarkXYZ,
+    val leftHip:        LandmarkXYZ,
+    val rightHip:       LandmarkXYZ,
+    val leftKnee:       LandmarkXYZ,
+    val rightKnee:      LandmarkXYZ,
+    val leftAnkle:      LandmarkXYZ,
+    val rightAnkle:     LandmarkXYZ,
+    // métricas derivadas para análise Z
+    val shoulderSpan:   Float,
+    val zDiff:          Float,
+    val normZ:          Float,
+)
+
+private fun List<DebugSnapshot>.toClipboardText(): String {
+    val lines = mutableListOf("DancaAI — Dados de Debug ($size captura${if (size != 1) "s" else ""})", "")
+    forEach { snap ->
+        lines += "Captura #${snap.number}"
+        for ((label, xyz) in listOf(
+            "NAR  " to snap.nose,
+            "ORE-E" to snap.leftEar,       "ORE-D" to snap.rightEar,
+            "OMB-E" to snap.leftShoulder,  "OMB-D" to snap.rightShoulder,
+            "QDR-E" to snap.leftHip,       "QDR-D" to snap.rightHip,
+            "JOE-E" to snap.leftKnee,      "JOE-D" to snap.rightKnee,
+            "TRN-E" to snap.leftAnkle,     "TRN-D" to snap.rightAnkle,
+        )) {
+            lines += "  $label  x=%.3f  y=%.3f  z=%.3f".format(xyz.x, xyz.y, xyz.z)
+        }
+        lines += "  CALC   span=%.3f  Zdiff=%.3f  norm=%.2f".format(
+            snap.shoulderSpan, snap.zDiff, snap.normZ)
+        lines += ""
+    }
+    return lines.joinToString("\n")
+}
+
+private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
+    fun at(i: Int): LandmarkXYZ {
+        val lm = getOrNull(i)
+        return LandmarkXYZ(lm?.x() ?: 0f, lm?.y() ?: 0f, lm?.z() ?: 0f)
+    }
+    val lS    = getOrNull(11); val rS = getOrNull(12)
+    val lH    = getOrNull(23); val rH = getOrNull(24)
+    val span  = if (lS != null && rS != null) kotlin.math.abs(rS.x() - lS.x()) else 0f
+    val zDiff = if (lS != null && rS != null && lH != null && rH != null)
+        (lS.z() + rS.z()) / 2f - (lH.z() + rH.z()) / 2f else 0f
+    val normZ = if (span > 0.01f) zDiff / span else 0f
+    return DebugSnapshot(
+        number        = n,
+        nose          = at(0),
+        leftEar       = at(7),  rightEar      = at(8),
+        leftShoulder  = at(11), rightShoulder = at(12),
+        leftHip       = at(23), rightHip      = at(24),
+        leftKnee      = at(25), rightKnee     = at(26),
+        leftAnkle     = at(27), rightAnkle    = at(28),
+        shoulderSpan  = span,
+        zDiff         = zDiff,
+        normZ         = normZ,
+    )
+}
 
 /**
  * Tela de Treino: feed real da câmera + esqueleto MediaPipe (PoseCameraView)
@@ -81,7 +142,6 @@ private const val TOTAL_SECONDS = 5 * 60
 fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val bpm = MockRepository.defaultMusic.bpm
 
     var hasPermission by remember {
         mutableStateOf(
@@ -96,26 +156,17 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
 
     var paused by remember { mutableStateOf(false) }
     var elapsed by remember { mutableIntStateOf(0) }
-    var tick by remember { mutableIntStateOf(0) }
-    var beat by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(paused) {
         while (!paused) {
-            delay(1000); elapsed++; tick++
+            delay(1000); elapsed++
         }
     }
-    LaunchedEffect(paused) {
-        val interval = (60_000L / bpm).coerceAtLeast(1)
-        while (!paused) {
-            delay(interval); beat++
-        }
-    }
-
-    val posture = (70 + (sin(tick * 0.6) * 10).roundToInt()).coerceIn(0, 100)
-    val rhythm = (80 + (cos(tick * 0.7) * 8).roundToInt()).coerceIn(0, 100)
 
     val cameraViewRef = remember { mutableStateOf<PoseCameraView?>(null) }
     var poseUnavailable by remember { mutableStateOf(false) }
+    val snapshots = remember { mutableStateListOf<DebugSnapshot>() }
+    var showDebugResults by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
         if (hasPermission) {
@@ -136,18 +187,15 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
             PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) }, onBack = onBack)
         }
 
-        // ── HUD superior: scores + timer ─────────────────────────────
-        Row(
+        // ── HUD superior: timer ──────────────────────────────────────
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Black.copy(alpha = 0.35f))
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            contentAlignment = Alignment.TopCenter,
         ) {
-            ScoreHud("Postura", posture)
             TimerControl(elapsed, paused) { paused = !paused }
-            ScoreHud("Ritmo", rhythm, alignEnd = true)
         }
 
         // botão alternar câmera
@@ -176,47 +224,38 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
             )
         }
 
-        // toast contextual
-        AnimatedVisibility(
-            visible = !paused,
-            modifier = Modifier.align(Alignment.Center).padding(top = 80.dp),
-        ) {
-            ContextualToast(tick)
-        }
-
-        // ── HUD inferior: ritmo + encerrar ───────────────────────────
+        // ── HUD inferior: registrar + encerrar ──────────────────────
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            RhythmIndicator(beat = beat, bpm = bpm, paused = paused)
-            EndButton(onEnd)
+            RegisterButton(
+                count = snapshots.size,
+                onClick = {
+                    cameraViewRef.value?.currentLandmarks?.let { lm ->
+                        snapshots.add(lm.toSnapshot(snapshots.size + 1))
+                    }
+                },
+            )
+            EndButton {
+                if (snapshots.isEmpty()) onEnd()
+                else showDebugResults = true
+            }
         }
 
         // veil de pausa
         if (paused) {
             PausedVeil(onResume = { paused = false }, onEnd = onEnd)
         }
-    }
-}
 
-@Composable
-private fun ScoreHud(label: String, value: Int, alignEnd: Boolean = false) {
-    Column(horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start, modifier = Modifier.width(96.dp)) {
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.7f),
-        )
-        Text(
-            "$value",
-            fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold, fontSize = 44.sp,
-            color = scoreColor(value),
-        )
+        // resultados de debug (substitui a tela após encerrar)
+        if (showDebugResults) {
+            DebugResultsOverlay(snapshots = snapshots, onClose = onEnd)
+        }
     }
 }
 
@@ -250,81 +289,116 @@ private fun TimerControl(elapsed: Int, paused: Boolean, onPause: () -> Unit) {
 }
 
 @Composable
-private fun RhythmIndicator(beat: Int, bpm: Int, paused: Boolean) {
-    val accent = DcaTheme.colors.accent
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
-        Text("BEAT", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
-        BeatDot(beat = beat, paused = paused, accent = accent)
-        Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            repeat(16) { i ->
-                val lit = (beat + i) % 4 == 0
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .height(if (lit) 14.dp else 6.dp)
-                        .clip(Shapes.sm)
-                        .background(if (lit) accent else Color.White.copy(alpha = 0.2f)),
-                )
+private fun RegisterButton(count: Int, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(44.dp)
+            .clip(Shapes.pill)
+            .background(DcaTheme.colors.accent.copy(alpha = 0.9f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 28.dp),
+    ) {
+        Text(
+            if (count == 0) "Registrar" else "Registrar  ($count)",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+        )
+    }
+}
+
+@Composable
+private fun DebugResultsOverlay(snapshots: List<DebugSnapshot>, onClose: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    val context   = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF0141418))
+            .padding(horizontal = 16.dp),
+    ) {
+        Spacer(Modifier.height(48.dp))
+        Text(
+            "Dados Registrados — ${snapshots.size} captura${if (snapshots.size != 1) "s" else ""}",
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            color = Color.White,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            snapshots.forEach { snap -> SnapshotCard(snap) }
+            Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            DcaOutlinedButton(
+                "Copiar tudo",
+                onClick = {
+                    clipboard.setText(AnnotatedString(snapshots.toClipboardText()))
+                    Toast.makeText(context, "Copiado!", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.weight(1f),
+            )
+            DcaFilledButton(
+                "Encerrar",
+                onClick = onClose,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SnapshotCard(snap: DebugSnapshot) {
+    val entries = listOf(
+        "NAR  " to snap.nose,
+        "ORE-E" to snap.leftEar,      "ORE-D" to snap.rightEar,
+        "OMB-E" to snap.leftShoulder, "OMB-D" to snap.rightShoulder,
+        "QDR-E" to snap.leftHip,      "QDR-D" to snap.rightHip,
+        "JOE-E" to snap.leftKnee,     "JOE-D" to snap.rightKnee,
+        "TRN-E" to snap.leftAnkle,    "TRN-D" to snap.rightAnkle,
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(Shapes.md)
+            .background(Color(0xFF1E1E26))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            "Captura #${snap.number}",
+            fontWeight = FontWeight.Bold,
+            color = DcaTheme.colors.accent,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        entries.forEach { (label, xyz) ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(label, fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp, color = Color.Cyan, modifier = Modifier.width(48.dp))
+                Text("x=%.3f  y=%.3f  z=%.3f".format(xyz.x, xyz.y, xyz.z),
+                    fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
             }
         }
-        Text("$bpm bpm", fontFamily = MonoFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
-    }
-}
-
-/** Ponto do beat: a cada batida pulsa (escala) e emite um anel que se expande. */
-@Composable
-private fun BeatDot(beat: Int, paused: Boolean, accent: Color) {
-    val scale = remember { Animatable(1f) }
-    val ring = remember { Animatable(0f) }
-    LaunchedEffect(beat, paused) {
-        if (paused) return@LaunchedEffect
-        launch { scale.snapTo(1.5f); scale.animateTo(1f, tween(400)) }
-        ring.snapTo(0f); ring.animateTo(1f, tween(450))
-    }
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(22.dp)) {
-        Box(
-            Modifier
-                .size(16.dp)
-                .graphicsLayer {
-                    val s = 1f + ring.value * 1.2f
-                    scaleX = s; scaleY = s; alpha = 1f - ring.value
-                }
-                .clip(CircleShape)
-                .border(1.5.dp, accent, CircleShape),
-        )
-        Box(
-            Modifier
-                .size(16.dp)
-                .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
-                .clip(CircleShape)
-                .background(accent),
-        )
-    }
-}
-
-private data class Toast(val icon: ImageVector, val text: String)
-
-@Composable
-private fun ContextualToast(tick: Int) {
-    val toasts = remember {
-        listOf(
-            Toast(Icons.Rounded.FitnessCenter, "Eleve o quadril"),
-            Toast(Icons.Rounded.Timer, "Acompanhe o tempo"),
-            Toast(Icons.Rounded.RotateRight, "Joelho esquerdo +5°"),
-        )
-    }
-    val t = toasts[(tick / 5) % toasts.size]
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .clip(Shapes.pill)
-            .background(Color(0xFF141418).copy(alpha = 0.82f))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), Shapes.pill)
-            .padding(start = 14.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
-    ) {
-        Icon(t.icon, contentDescription = null, tint = DcaTheme.colors.accent, modifier = Modifier.size(20.dp))
-        Text(t.text, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+        // linha de métricas derivadas
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("CALC ", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
+                fontSize = 12.sp, color = Color.Yellow, modifier = Modifier.width(48.dp))
+            Text("span=%.3f  Zdiff=%.3f  norm=%.2f".format(
+                    snap.shoulderSpan, snap.zDiff, snap.normZ),
+                fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
+        }
     }
 }
 
