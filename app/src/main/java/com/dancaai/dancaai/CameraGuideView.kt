@@ -6,16 +6,10 @@ import android.util.AttributeSet
 import android.view.View
 import kotlin.math.roundToInt
 
-/**
- * View que exibe o HUD de guia de posicionamento da câmera.
- * Mostra barras de progresso para distância, ângulo e centralização.
- */
 class CameraGuideView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
     private var guideResult: CameraGuideResult? = null
-    private var isVisible = true
-
-    // ── Paints ───────────────────────────────────────────────────────────────
+    private var isGuideVisible = true
 
     private val bgPaint = Paint().apply {
         color = Color.argb(180, 0, 0, 0)
@@ -23,32 +17,24 @@ class CameraGuideView(context: Context, attrs: AttributeSet?) : View(context, at
     }
 
     private val barBgPaint = Paint().apply {
-        color = Color.argb(100, 255, 255, 255)
+        color = Color.argb(80, 255, 255, 255)
         style = Paint.Style.FILL
     }
 
-    private val labelPaint = Paint().apply {
-        color = Color.WHITE
-        textSize = 26f
-        typeface = Typeface.DEFAULT_BOLD
-    }
-
     private val messagePaint = Paint().apply {
-        color = Color.rgb(200, 200, 200)
+        color = Color.rgb(210, 210, 210)
         textSize = 22f
     }
 
     private val idealPaint = Paint().apply {
         color = Color.GREEN
-        textSize = 30f
+        textSize = 32f
         typeface = Typeface.DEFAULT_BOLD
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
     }
 
-    private val barRadius = 8f
-    private val barHeight = 14f
-
-    // ── Público ───────────────────────────────────────────────────────────────
+    private val barHeight = 20f
+    private val barRadius = 20f
 
     fun update(result: CameraGuideResult) {
         guideResult = result
@@ -56,37 +42,38 @@ class CameraGuideView(context: Context, attrs: AttributeSet?) : View(context, at
     }
 
     fun toggleVisibility() {
-        isVisible = !isVisible
+        isGuideVisible = !isGuideVisible
         invalidate()
     }
 
-    // ── Desenho ───────────────────────────────────────────────────────────────
-
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!isVisible) return
+        if (!isGuideVisible) return
         val g = guideResult ?: return
 
-        val panelW = 300f
-        val panelH = 160f
-        val margin = 16f
-        val left   = margin
-        val top    = margin
+        val panelW = 700f
+        val panelH = 700f
+        val left   = 4f
+        val top    = 4f
 
-        // Fundo do painel
-        val rect = RectF(left, top, left + panelW, top + panelH)
-        canvas.drawRoundRect(rect, 16f, 16f, bgPaint)
+        // Fundo
+        canvas.drawRoundRect(RectF(left, top, left + panelW, top + panelH), 16f, 16f, bgPaint)
 
-        // Se posição ideal, mostra só o check
         if (g.isIdeal) {
-            canvas.drawText("✓ POSIÇÃO IDEAL", left + 20f, top + panelH / 2f + 10f, idealPaint)
+            canvas.drawText(
+                "✓ POSIÇÃO IDEAL",
+                left + 20f,
+                top + panelH / 2f + 12f,
+                idealPaint
+            )
             return
         }
 
-        // Linhas do HUD
-        drawRow(canvas, "📏", g.distanceMessage,  g.distanceScore, left + 14f, top + 44f,  panelW - 28f)
-        drawRow(canvas, "📐", g.angleMessage,     g.angleScore,    left + 14f, top + 90f,  panelW - 28f)
-        drawRow(canvas, "👤", g.centerMessage,    g.centerScore,   left + 14f, top + 136f, panelW - 28f)
+        // 3 linhas: corpo, distância, centralização
+        val rowSpacing = panelH / 5f
+        drawRow(canvas, "👤", g.bodyMessage,       g.bodyScore,      left + 12f, top + rowSpacing,       panelW - 60f)
+        drawRow(canvas, "📏", g.distanceMessage,   g.distanceScore,  left + 12f, top + rowSpacing * 2f,  panelW - 60f)
+        drawRow(canvas, "↔️", g.centerMessage,     g.centerScore,    left + 12f, top + rowSpacing * 3f,  panelW - 60f)
     }
 
     private fun drawRow(
@@ -96,40 +83,36 @@ class CameraGuideView(context: Context, attrs: AttributeSet?) : View(context, at
         score: Float,
         x: Float,
         y: Float,
-        maxWidth: Float
+        barWidth: Float
     ) {
-        // Ícone + mensagem
+        // Mensagem
         canvas.drawText("$icon $message", x, y - 4f, messagePaint)
 
-        // Barra de fundo
-        val barTop  = y + 4f
-        val barBot  = barTop + barHeight
-        val bgRect  = RectF(x, barTop, x + maxWidth, barBot)
-        canvas.drawRoundRect(bgRect, barRadius, barRadius, barBgPaint)
+        // Barra fundo
+        val barTop = y + 4f
+        val barBot = barTop + barHeight
+        canvas.drawRoundRect(RectF(x, barTop, x + barWidth, barBot), barRadius, barRadius, barBgPaint)
 
-        // Barra de progresso
-        val fillW   = (maxWidth * score).coerceAtLeast(barRadius * 2)
-        val fillRect = RectF(x, barTop, x + fillW, barBot)
-        val barColor = scoreToColor(score)
+        // Barra preenchida
+        val fillW = (barWidth * score).coerceAtLeast(barRadius * 2)
         val fillPaint = Paint().apply {
-            color = barColor
+            color = scoreToColor(score)
             style = Paint.Style.FILL
         }
-        canvas.drawRoundRect(fillRect, barRadius, barRadius, fillPaint)
+        canvas.drawRoundRect(RectF(x, barTop, x + fillW, barBot), barRadius, barRadius, fillPaint)
 
         // Percentual
-        val pct = (score * 100).roundToInt()
         val pctPaint = Paint().apply {
             color = Color.WHITE
             textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
         }
-        canvas.drawText("$pct%", x + maxWidth + 4f, barBot, pctPaint)
+        canvas.drawText("${(score * 100).roundToInt()}%", x + barWidth + 6f, barBot, pctPaint)
     }
 
     private fun scoreToColor(score: Float): Int = when {
-        score >= 0.85f -> Color.rgb(50, 200, 80)   // verde
-        score >= 0.60f -> Color.rgb(255, 180, 0)   // amarelo
-        else           -> Color.rgb(220, 60, 60)   // vermelho
+        score >= 0.85f -> Color.rgb(50, 200, 80)
+        score >= 0.60f -> Color.rgb(255, 180, 0)
+        else           -> Color.rgb(220, 60, 60)
     }
 }
