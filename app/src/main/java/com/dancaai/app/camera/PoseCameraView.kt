@@ -47,6 +47,7 @@ class PoseCameraView @JvmOverloads constructor(
     var currentLandmarks: List<com.google.mediapipe.tasks.components.containers.NormalizedLandmark>? = null
         private set
 
+
     /**
      * Chamado quando a detecção de pose não pôde ser inicializada — tipicamente
      * no emulador, onde o MediaPipe não tem biblioteca nativa para x86_64.
@@ -131,6 +132,7 @@ class PoseCameraView @JvmOverloads constructor(
                 AngleCalculator.compute(first)?.let { overlayView.updateAngles(it) }
                 overlayView.updatePosture(PostureValidator.validate(first))
                 overlayView.updateDebugLandmarks(first)
+
             }
         }
     }

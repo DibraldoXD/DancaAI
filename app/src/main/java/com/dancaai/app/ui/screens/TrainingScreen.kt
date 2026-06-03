@@ -81,10 +81,9 @@ private data class DebugSnapshot(
     val rightKnee:      LandmarkXYZ,
     val leftAnkle:      LandmarkXYZ,
     val rightAnkle:     LandmarkXYZ,
-    // métricas derivadas para análise Z
-    val shoulderSpan:   Float,
-    val zDiff:          Float,
-    val normZ:          Float,
+    // métricas derivadas
+    val shoulderSpan: Float,
+    val zDiff:        Float,  // avgShoulderZ − avgHipZ
 )
 
 private fun List<DebugSnapshot>.toClipboardText(): String {
@@ -101,8 +100,8 @@ private fun List<DebugSnapshot>.toClipboardText(): String {
         )) {
             lines += "  $label  x=%.3f  y=%.3f  z=%.3f".format(xyz.x, xyz.y, xyz.z)
         }
-        lines += "  CALC   span=%.3f  Zdiff=%.3f  norm=%.2f".format(
-            snap.shoulderSpan, snap.zDiff, snap.normZ)
+        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-0.23".format(
+            snap.shoulderSpan, snap.zDiff)
         lines += ""
     }
     return lines.joinToString("\n")
@@ -113,12 +112,11 @@ private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
         val lm = getOrNull(i)
         return LandmarkXYZ(lm?.x() ?: 0f, lm?.y() ?: 0f, lm?.z() ?: 0f)
     }
-    val lS    = getOrNull(11); val rS = getOrNull(12)
-    val lH    = getOrNull(23); val rH = getOrNull(24)
+    val lS = getOrNull(11); val rS = getOrNull(12)
+    val lH = getOrNull(23); val rH = getOrNull(24)
     val span  = if (lS != null && rS != null) kotlin.math.abs(rS.x() - lS.x()) else 0f
     val zDiff = if (lS != null && rS != null && lH != null && rH != null)
         (lS.z() + rS.z()) / 2f - (lH.z() + rH.z()) / 2f else 0f
-    val normZ = if (span > 0.01f) zDiff / span else 0f
     return DebugSnapshot(
         number        = n,
         nose          = at(0),
@@ -129,7 +127,6 @@ private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
         leftAnkle     = at(27), rightAnkle    = at(28),
         shoulderSpan  = span,
         zDiff         = zDiff,
-        normZ         = normZ,
     )
 }
 
@@ -395,8 +392,8 @@ private fun SnapshotCard(snap: DebugSnapshot) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("CALC ", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
                 fontSize = 12.sp, color = Color.Yellow, modifier = Modifier.width(48.dp))
-            Text("span=%.3f  Zdiff=%.3f  norm=%.2f".format(
-                    snap.shoulderSpan, snap.zDiff, snap.normZ),
+            Text("span=%.3f  Zdiff=%.3f  thr=-0.23".format(
+                    snap.shoulderSpan, snap.zDiff),
                 fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
         }
     }

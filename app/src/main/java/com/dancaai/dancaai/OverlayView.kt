@@ -345,13 +345,16 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         val yD = top + 28f + rows.size * lineH + 6f
         canvas.drawText("CALC :", left + 8f, yD, debugLabelPaint)
         if (lm != null && lm.size >= 25) {
+            val nose  = lm[0]
             val lS    = lm[11]; val rS = lm[12]
-            val lH    = lm[23]; val rH = lm[24]
             val span  = kotlin.math.abs(rS.x() - lS.x())
-            val zDiff = (lS.z() + rS.z()) / 2f - (lH.z() + rH.z()) / 2f
-            val normZ = if (span > 0.01f) zDiff / span else 0f
+            val avgShZ = (lS.z() + rS.z()) / 2f
+            val normNS = if (span > 0.01f) (nose.z() - avgShZ) / span else 0f
+            val lH = lm.getOrNull(23); val rH = lm.getOrNull(24)
+            val avgHipZ = if (lH != null && rH != null) (lH.z() + rH.z()) / 2f else 0f
+            val zDiff   = avgShZ - avgHipZ
             canvas.drawText(
-                "span=%.3f  Zdiff=%.3f  norm=%.2f".format(span, zDiff, normZ),
+                "span=%.3f  Zdiff=%.3f  thr=-0.23".format(span, zDiff),
                 left + 90f, yD, debugTextPaint
             )
         } else {
