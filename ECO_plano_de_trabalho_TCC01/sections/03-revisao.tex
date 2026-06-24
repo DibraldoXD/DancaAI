@@ -1,0 +1,152 @@
+
+\newpage
+\section{Revisão bibliográfica}
+\label{sc:revisao}
+
+Esta seção sintetiza o referencial teórico e tecnológico que fundamenta o
+Dança~AI em cinco eixos: dança de salão e forró universitário, visão
+computacional e estimativa de pose, computação móvel e inferência
+\textit{on-device}, inteligência artificial para análise de movimentos, e
+trabalhos correlatos.
+
+\subsection{Dança de Salão e Forró Universitário}
+\label{sub:danca}
+
+A dança de salão produz benefícios documentados à saúde física, à percepção
+corporal e à integração social: Fonseca, Vecchi e Gama~\cite{fonseca2012}
+distinguem as dimensões de esquema corporal e imagem corporal aprimoradas pela
+prática; Rodrigues et al.~\cite{rodrigues2011} registram melhora significativa
+de satisfação corporal em iniciantes; Paiva, Loures e Marinho~\cite{paiva2019danca}
+relatam risco relativo de quedas de 0{,}2 em idosos praticantes; e Havt et
+al.~\cite{havt2026dancar} identificam coordenação motora, socialização e
+autoaceitação como motivações centrais. O forró universitário emergiu na década
+de 1990 ao incorporar vocabulário da dança de salão --- giros, conexão corporal
+e transferência de peso --- ao forró pé de serra~\cite{silva2022aspectos}, criando
+um estilo com complexidade biomecânica adequada à análise computacional. A
+sistematização pedagógica dessas modalidades ainda é escassa na
+literatura~\cite{porto2023ressignificando}, reforçando a pertinência de uma
+abordagem instrumentada.
+
+A avaliação biomecânica dos movimentos baseia-se no ângulo articular $\theta$
+calculado a partir de três \textit{landmarks} consecutivos --- proximal ($P$),
+articular ($A$) e distal ($D$) --- segundo:
+
+\begin{equation}
+    \theta = \arccos\!\left(\frac{\overrightarrow{AP} \cdot \overrightarrow{AD}}
+    {\left|\overrightarrow{AP}\right|\left|\overrightarrow{AD}\right|}\right)
+    \label{eq:angulo}
+\end{equation}
+
+\noindent onde $\overrightarrow{AP} = P - A$ e $\overrightarrow{AD} = D - A$.
+Aplicado quadro a quadro sobre os \textit{landmarks} fornecidos pelo MediaPipe,
+esse cálculo produz séries temporais de ângulos que refletem a execução
+dinâmica do movimento. Do ponto de vista rítmico, o forró universitário opera
+em compassos binários com BPM entre 100 e 180; a sincronia sensoriomotora
+com metrônomos é um mecanismo estabelecido para aprimorar a consistência
+temporal do movimento humano~\cite{repp2013sms, karageorghis2019dance,
+bood2013running, whitton2023sms}.
+
+\subsection{Visão Computacional e Estimativa de Pose}
+\label{sub:visao}
+
+A estimativa de pose por redes neurais profundas tornou-se o método padrão
+para análise de movimento em tempo real; Latyshev et
+al.~\cite{latyshev2024computer} confirmam que arquiteturas otimizadas para
+inferência em borda oferecem o melhor equilíbrio entre acurácia e viabilidade
+operacional. O MediaPipe~\cite{lugaresi2019mediapipe} implementa a arquitetura
+BlazePose~\cite{bazarevsky2020blazeposeondevicerealtimebody}, que opera em dois
+estágios sequenciais --- detector de pessoa e estimador de pose sobre a região
+de interesse --- produzindo 33~\textit{landmarks} tridimensionais com
+\textit{visibility scores} a mais de 30~FPS em dispositivos \textit{mid-range}.
+A validade das medições angulares a partir desses \textit{landmarks} foi
+confirmada por Latreche et al.~\cite{LATRECHE2023112826} em comparação com
+goniômetros clínicos. Os principais desafios em contextos de dança ---
+auto-oclusão em giros, variações de ponto de vista e iluminação variável ---
+são documentados por Tharatipyakul et al.~\cite{THARATIPYAKUL2024e36589} em
+revisão de 45 trabalhos; o \textit{visibility score} do BlazePose é o
+mecanismo adotado para suspender cálculos sobre \textit{landmarks} não
+confiáveis~\cite{bora2023real}.
+
+\subsection{Computação Móvel e Inferência \textit{On-Device}}
+\label{subsub:otimizacao}
+
+A inferência totalmente \textit{on-device} é determinada por três fatores:
+(i)~\textbf{latência} --- o \textit{feedback} deve ser entregue em menos de
+100~ms, janela incompatível com requisições de rede em condições reais de
+conectividade móvel~\cite{li2020edgeai}; (ii)~\textbf{privacidade} ---
+gravações contínuas do usuário não devem ser transmitidas a servidores
+externos; (iii)~\textbf{disponibilidade} --- o aplicativo deve funcionar sem
+conectividade. O TensorFlow Lite (TFLite)~\cite{lee2019ondevice} executa a
+inferência com \textit{delegate} GPU (OpenGL ES~3.1) e NNAPI, com aceleração
+média de 2--9$\times$ sobre CPU; a quantização INT8 reduz o tamanho do modelo
+em 75\% sem degradação crítica de acurácia, viabilizando modelos embarcados em
+\textit{mid-range}. O orçamento de latência distribui-se pelos estágios do
+\textit{pipeline}: captura ($\approx$10~ms), inferência BlazePose
+($\approx$20--40~ms), classificadores e módulo de ritmo ($\approx$10~ms), e
+renderização ($\approx$16~ms), somando confortavelmente menos de 100~ms em
+\textit{hardware} representativo~\cite{zhang2020mobipose}.
+
+\subsection{Inteligência Artificial para Análise de Movimentos}
+\label{sub:ia}
+
+A classificação de movimentos de dança exige arquiteturas capazes de modelar
+dependências temporais: arquiteturas CNN-LSTM combinam extração de
+características locais por camadas convolucionais com modelagem de dependências
+globais em sequências de \textit{landmarks}~\cite{ruiz2023dl_timeseries,
+ncbi_dance_emotional}. Para os módulos de postura e identificação de movimentos
+do Dança~AI, classificadores TFLite são treinados sobre coordenadas $xyz$ dos
+\textit{landmarks} extraídas pelo MediaPipe --- o classificador de postura opera
+sobre valores instantâneos de um único quadro; o classificador de movimentos opera
+sobre séries temporais de quadros consecutivos. O dataset final consiste em
+coordenadas, não em vídeos brutos, o que além de
+preservar a privacidade dos participantes reduz a dimensionalidade da entrada
+e elimina variações irrelevantes de iluminação, vestuário e fundo, tornando a
+análise mais simples e precisa do que sobre a imagem completa. O classificador de postura é multi-label, avaliando cinco desvios de forma
+independente --- ombro esquerdo caído, ombro direito caído, ombros encurvados,
+inclinação do tronco para esquerda e inclinação do tronco para direita ---
+podendo detectar múltiplos desvios simultaneamente; o classificador de
+movimentos tem escopo restrito à identificação do passo em execução entre os
+seis do forró, com a avaliação de qualidade da execução delegada ao módulo
+DTW~\cite{bursa2023tflite, roggio2024pose}.
+
+A comparação de sequências emprega o \textit{Dynamic Time Warping} (DTW), que
+alinha duas séries temporais de comprimentos distintos minimizando a distância
+acumulada entre elementos correspondentes, produzindo uma métrica invariante a
+distorções temporais locais~\cite{dynamic_dance_warping}. A restrição de janela
+de Sakoe-Chiba reduz a complexidade de $O(nm)$ para $O(n \cdot w)$ e
+demonstrou acurácia superior ao DTW irrestrito em reconhecimento
+gestual~\cite{10.1145/3598151.3598181, gesture_dtw_skeleton}. A eficácia do
+\textit{feedback} visual depende da latência: atrasos superiores a 200~ms
+comprometem a associação sensoriomotora~\cite{plos_feedback_delay,
+pmc_movement_feedback_assist}; a sobreposição de esqueleto com codificação
+cromática é a abordagem consolidada na
+literatura~\cite{THARATIPYAKUL2024e36589}, com ganho empírico de acurácia de
+55,9\% para 66,8\% em experimento com praticantes~\cite{stanford_ai_dance_coaching}.
+
+\subsection{Trabalhos Correlatos}
+\label{sub:correlatos}
+
+A Tabela~\ref{tab:correlatos} compara o Dança~AI com os sistemas mais próximos
+identificados na revisão. Nenhum dos trabalhos analisados reúne simultaneamente
+inferência \textit{on-device} em \textit{smartphone} de consumo, avaliação
+biomecânica por ângulos articulares, DTW para comparação de sequências e foco
+em modalidade específica de dança de salão.
+
+\begin{table}[h]
+\centering
+\caption{Comparação entre o Dança~AI e trabalhos correlatos}
+\label{tab:correlatos}
+\begin{tabular}{p{2.6cm}p{2.6cm}p{3cm}p{1.6cm}p{3.4cm}}
+\hline
+\textbf{Trabalho} & \textbf{Plataforma/ Execução} & \textbf{Foco de Avaliação} & \textbf{Feedback em Tempo Real} & \textbf{Limitação frente ao Dança~AI} \\
+\hline
+TransCNN-DSSS~\cite{Qu2024} & Servidor (GPU) & Qualidade do movimento (QSD: acurácia, fluidez, expressividade) & Não & Arquitetura pesada, sem viabilidade mobile \\
+DanceFormer~\cite{danceformer} & Edge server dedicado & Análise de dança em tempo real & Sim (35,2~ms) & Depende de infraestrutura de borda externa \\
+Coaching baseado em pose~\cite{stanford_ai_dance_coaching} & Protótipo de pesquisa & Acurácia de execução motora & Sim & Sem empacotamento como app autônomo \\
+MobiPose~\cite{zhang2020mobipose} & Smartphone (on-device) & Estimativa de pose multipessoa & Sim & Sem avaliação biomecânica ou de qualidade \\
+V-VIPE~\cite{levy2024v} & Não especificado & Embeddings de pose invariantes à vista & Não & Componente isolado, sem pipeline completo \\
+Dynamic Dance Warping~\cite{dynamic_dance_warping} & Offline & Similaridade de sequências via DTW & Não & Algoritmo de comparação, sem integração mobile \\
+\textbf{Dança~AI (proposto)} & \textbf{Smartphone (on-device)} & \textbf{Ângulos articulares + DTW} & \textbf{Sim (<100~ms)} & --- \\
+\hline
+\end{tabular}
+\end{table}

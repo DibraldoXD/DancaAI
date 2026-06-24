@@ -1,0 +1,56 @@
+\newpage
+\section{Objetivos específicos}
+\label{sec:objetivos}
+
+O objetivo geral deste trabalho é desenvolver um aplicativo móvel de
+treinamento individual de forró universitário que utiliza visão computacional
+para analisar em tempo real a transferência de peso, a postura corporal, o
+ritmo e a execução de passos do praticante, fornecendo feedback imediato sem
+a necessidade de um instrutor presencial. Para alcançar esse objetivo, foram
+definidos os seguintes objetivos específicos:
+
+\begin{enumerate}
+    \item Sistematizar, a partir da revisão bibliográfica, os critérios
+    biomecânicos relevantes para avaliação dos quatro módulos do sistema ---
+    transferência de peso, postura, ritmo e execução de passos do forró
+    universitário --- definindo as métricas e os limiares de avaliação a
+    serem adotados;
+
+    \item Projetar a arquitetura do sistema Dança~AI, especificando os quatro
+    módulos de análise, o pipeline de captura e inferência (CameraX →
+    MediaPipe Pose Landmarker → módulos → feedback) e as interfaces entre
+    componentes;
+
+    \item Implementar o módulo de transferência de peso, classificando o
+    apoio do praticante como esquerdo, direito ou neutro a partir da razão
+    horizontal entre os landmarks de quadril detectados pelo MediaPipe, com
+    feedback visual simples e direto;
+
+    \item Implementar o módulo de análise de postura, avaliando o
+    alinhamento do tronco e dos ombros por meio de regras geométricas sobre
+    os landmarks da parte superior do corpo e de um modelo de classificação
+    embarcado treinado sobre coordenadas $xyz$ de dançarinos, com feedback visual indicando
+    conformidade ou desvio postural;
+
+    \item Implementar o módulo de ritmo, com metrônomo configurável por BPM e
+    tipo de batida, feedback auditivo ao praticante e validação rítmica por
+    comparação entre a cadência do metrônomo e o padrão de transferência de
+    peso detectado em tempo real;
+
+    \item Implementar o módulo de identificação de movimentos, com
+    classificador embarcado treinado para reconhecer os seis passos definidos
+    (Balanço, Base~1, Base~2, Abertura, Giro Invertido e Giro em Linha), nos
+    modos Livre --- o sistema identifica e avalia o passo executado --- e
+    Desafio --- o praticante deve seguir uma sequência predefinida;
+
+    \item Avaliar o sistema desenvolvido em termos de latência do pipeline
+    completo, acurácia dos modelos de classificação e experiência do usuário,
+    por meio de testes com praticantes de forró utilizando a escala SUS
+    (\textit{System Usability Scale}).
+\end{enumerate}
+
+A execução desses objetivos está distribuída entre as duas etapas do
+trabalho de conclusão de curso: a presente etapa (TCC01) compreende a
+fundamentação teórica e o projeto da arquitetura (objetivos 1 e 2), enquanto
+o desenvolvimento, integração e avaliação dos módulos (objetivos 3 a 7) serão
+realizados na etapa subsequente (TCC02).

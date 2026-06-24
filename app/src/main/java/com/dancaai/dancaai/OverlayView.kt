@@ -354,7 +354,7 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
             val avgHipZ = if (lH != null && rH != null) (lH.z() + rH.z()) / 2f else 0f
             val zDiff   = avgShZ - avgHipZ
             canvas.drawText(
-                "span=%.3f  Zdiff=%.3f  thr=-0.23".format(span, zDiff),
+                "span=%.3f  Zdiff=%.3f  thr=-0.250".format(span, zDiff),
                 left + 90f, yD, debugTextPaint
             )
         } else {

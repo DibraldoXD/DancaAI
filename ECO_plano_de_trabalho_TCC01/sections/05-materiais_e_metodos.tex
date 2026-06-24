@@ -1,0 +1,200 @@
+\newpage
+\section{Materiais e métodos}
+\label{sc:materiais_e_metodos}
+
+O desenvolvimento do Dança~AI no âmbito do TCC02 compreende quatro fases sequenciais,
+alinhadas aos objetivos específicos 3 a 7 definidos na Seção~\ref{sec:objetivos}:
+(i)~implementação do \textit{pipeline} de visão computacional e dos módulos de transferência
+de peso e postura; (ii)~implementação dos módulos de ritmo e identificação de movimentos;
+(iii)~integração dos quatro módulos em interface unificada e calibração; e
+(iv)~avaliação do protótipo e redação da monografia. Esta seção descreve os materiais,
+ferramentas e procedimentos metodológicos adotados.
+
+\subsection{Hardware e Dispositivos-Alvo}
+\label{sub:hardware}
+
+Os testes do Dança~AI serão conduzidos em dispositivos Android de segmento intermediário
+(\textit{mid-range}), com especificações mínimas de: processador octa-core a ao menos
+1{,}8~GHz, GPU compatível com OpenGL ES~3.1 --- requisito do \textit{delegate} GPU do
+TensorFlow Lite~\cite{lee2019ondevice} ---, 4~GB de RAM e câmera traseira com resolução
+mínima de 1080p a 30~FPS. Esse perfil corresponde a dispositivos populares na faixa de preço
+acessível ao público-alvo, garantindo que os resultados de desempenho obtidos sejam
+representativos de condições reais de uso.
+
+Os experimentos de latência serão realizados em ao menos dois dispositivos de especificações
+distintas para verificar a robustez do orçamento de 100~ms estabelecido na
+Seção~\ref{subsub:otimizacao} em hardware variado. O modelo BlazePose \textit{lite},
+adotado no projeto, foi validado pelos seus autores a mais de 30~FPS no Pixel~2 --- dispositivo
+lançado em 2017 com hardware significativamente inferior ao dos \textit{mid-range} atuais ---,
+fornecendo margem de segurança confortável para execução no perfil-alvo~\cite{bazarevsky2020blazeposeondevicerealtimebody}.
+
+\subsection{Stack Tecnológico}
+\label{sub:stack}
+
+O aplicativo é desenvolvido integralmente em Kotlin sobre a plataforma Android, com suporte
+ao SDK mínimo 24 (Android 7.0 Nougat), representando mais de 94\% dos dispositivos ativos na
+plataforma. A adoção do Kotlin é fundamentada nas garantias de segurança de tipos nulos em
+tempo de compilação e no suporte nativo a corrotinas, que simplificam o gerenciamento do
+\textit{pipeline} assíncrono de captura, inferência e análise de vídeo sem o \textit{overhead}
+de \textit{callbacks} aninhados~\cite{jemerov2017kotlin}.
+
+A captura de vídeo é gerenciada pela biblioteca CameraX do Jetpack Android, que fornece API
+unificada e independente de fabricante para acesso à câmera. O caso de uso
+\texttt{ImageAnalysis} entrega quadros no formato \texttt{ImageProxy} a um executor
+configurável com controle de \textit{backpressure}, descartando quadros excedentes quando o
+processador não acompanha a taxa de captura --- comportamento essencial para preservar a
+responsividade da interface sob carga computacional elevada.
+
+A estimativa de pose é realizada pelo MediaPipe Pose Landmarker~\cite{lugaresi2019mediapipe}
+sobre o modelo BlazePose \textit{lite}~\cite{bazarevsky2020blazeposeondevicerealtimebody},
+integrado ao Android via dependência Maven
+\texttt{com.google.mediapipe:tasks-vision:0.10.14}. O modelo opera em modo
+\texttt{LIVE\_STREAM}, processando cada quadro de forma assíncrona e retornando os
+33~\textit{landmarks} tridimensionais com \textit{visibility scores} por \textit{callback}.
+A execução é acelerada pelo \textit{delegate} GPU, com \textit{fallback} automático para CPU
+em dispositivos sem suporte a OpenGL ES~3.1, eliminando qualquer dependência de hardware
+especializado~\cite{lee2019ondevice}.
+
+O módulo de comparação de movimentos implementa o algoritmo \textit{Dynamic Time Warping}
+(DTW) sobre as séries temporais de ângulos articulares extraídas pelo
+\texttt{AngleCalculator}, calculados \textit{frame} a \textit{frame} conforme a
+Equação~\ref{eq:angulo}. A segmentação temporal --- isto é, a delimitação do início e do
+fim de cada passo para montagem da sequência comparada --- é realizada pelo próprio módulo
+de transferência de peso: um ciclo completo de transferência (ex.: esquerdo → direito →
+esquerdo) sinaliza a conclusão de uma unidade de movimento e dispara a comparação DTW.
+A implementação é realizada em Kotlin puro, sem dependências externas, com restrição de
+janela de Sakoe-Chiba para limitar o custo computacional e tornar o alinhamento compatível
+com execução em tempo real~\cite{dynamic_dance_warping}. Os \textit{templates} de
+referência são gravados a partir de execuções de um instrutor qualificado e armazenados
+localmente no dispositivo como séries de \texttt{BodyAngles} serializadas, eliminando
+qualquer dependência de conectividade de rede em ambiente de prática.
+
+Os módulos de postura e de identificação de movimentos utilizam modelos de classificação
+no formato TensorFlow Lite (TFLite), executados via \texttt{org.tensorflow:tensorflow-lite},
+com quantização em inteiros de 8~bits para reduzir o tamanho do modelo e o consumo de
+memória em dispositivos \textit{mid-range}~\cite{bursa2023tflite}. Os modelos são treinados em Python com TensorFlow/Keras~\cite{abadi2016tensorflow}
+em ambiente Google Colab, a partir de coordenadas $xyz$ dos 33~\textit{landmarks}
+extraídas pelo MediaPipe, sem retenção dos vídeos brutos, preservando a privacidade
+dos participantes e eliminando variações irrelevantes de iluminação, vestuário e fundo.
+A conversão para o formato \texttt{.tflite} é realizada via
+\texttt{tf.lite.TFLiteConverter}~\cite{lee2019ondevice}.
+O classificador de postura opera sobre valores instantâneos de um único quadro;
+o classificador de movimentos opera sobre séries temporais de quadros consecutivos. O dataset será coletado com múltiplos dançarinos para
+ampliar a variabilidade inter-sujeito, com mínimo de 100 amostras por classe após
+\textit{data augmentation} por espelhamento lateral e variação de velocidade; a anotação
+das amostras será realizada pelos próprios autores, que possuem formação em dança de
+salão. O classificador de postura é multi-label, avaliando cinco desvios de forma
+independente --- ombro esquerdo caído, ombro direito caído, ombros encurvados,
+inclinação do tronco para esquerda e inclinação do tronco para direita ---
+podendo detectar múltiplos desvios simultaneamente; ausência de todos os
+desvios corresponde à postura correta; o classificador de movimentos cobre
+exclusivamente a identificação do passo em execução, com a avaliação de
+qualidade delegada ao módulo DTW. Os modelos convertidos
+para o formato \texttt{.tflite} são empacotados como \textit{assets} no APK.
+
+O módulo de ritmo utiliza a API \texttt{AudioTrack} do Android para geração de sinais
+sonoros com baixa latência, emitindo pulsações no BPM configurado pelo praticante. A
+validação rítmica compara o intervalo inter-batida (IBI) do metrônomo com a cadência das
+transferências de peso detectadas pelo respectivo módulo, gerando \textit{feedback} visual
+sobre a conformidade rítmica em tempo real~\cite{rose2019metronome}.
+
+A interface do usuário é construída com Jetpack Compose e \textit{Material~3}. A tela de
+configuração de sessão inclui um guia de enquadramento que fornece feedback visual em tempo
+real sobre a distância, ângulo e altura do dispositivo em relação ao praticante, orientando
+o posicionamento antes do início da sessão; o uso de suporte físico é recomendado para
+maior estabilidade, mas não é requisito do sistema. O \textit{overlay} de
+\textit{feedback} visual é renderizado por uma \texttt{View} customizada
+(\texttt{OverlayView}) sobreposta ao \textit{preview} da câmera, com indicadores visuais por módulo; no módulo de identificação de movimentos, a
+codificação cromática por articulação é calculada a partir da distância DTW do
+segmento corrente em relação ao \textit{template}. O controle de versão é realizado via Git com repositório remoto no GitHub,
+adotando fluxo de ramificação por funcionalidade (\textit{feature branching}) que permite o
+desenvolvimento paralelo dos módulos de pose, DTW e interface.
+
+\subsection{Metodologia de Desenvolvimento}
+\label{sub:metodologia}
+
+O desenvolvimento segue abordagem iterativa orientada ao produto mínimo viável (MVP),
+estruturada em quatro fases correspondentes aos objetivos específicos 3 a 7 do TCC02. Cada
+fase produz um artefato verificável que serve de entrada para a fase seguinte, permitindo
+detecção precoce de problemas de integração.
+
+Na \textbf{Fase~1} são implementados o \textit{pipeline} de visão computacional e os
+primeiros dois módulos de análise: captura via CameraX, inferência com MediaPipe Pose
+Landmarker e renderização do \textit{overlay} de esqueleto; módulo de transferência de peso
+com classificação esquerdo/direito/neutro e \textit{feedback} visual; e módulo de postura
+com regras geométricas sobre os \textit{landmarks} da parte superior do corpo e modelo TFLite
+embarcado treinado sobre coordenadas $xyz$ de dançarinos qualificados~\cite{roggio2024pose}. O critério de
+conclusão é execução estável a ao menos 20~FPS com latência ponta a ponta inferior a 100~ms,
+aferida via \texttt{SystemClock.uptimeMillis()}.
+
+Na \textbf{Fase~2} são implementados o módulo de ritmo --- metrônomo configurável por BPM,
+\textit{feedback} auditivo via \texttt{AudioTrack} e validação pela comparação entre o IBI
+e a cadência de transferências de peso detectada em tempo real --- e o módulo de identificação
+de movimentos, com treinamento e \textit{deploy} do classificador TFLite para os seis passos
+do forró~\cite{skeleton_dtw_sport} e implementação dos modos Livre e Desafio. Os
+\textit{templates} DTW de referência são gravados com instrutor qualificado de forró
+universitário e armazenados localmente no dispositivo.
+
+Na \textbf{Fase~3} os quatro módulos são integrados em interface unificada construída com
+Jetpack Compose e \textit{Material~3}, e os limiares de aceitação dos classificadores e do
+metrônomo são calibrados em sessões piloto com praticantes. O critério de conclusão é a
+confirmação de que o \textit{feedback} é percebido como responsivo e coerente com o
+movimento, dentro do limiar neurológico de 200~ms documentado na literatura de aprendizagem
+motora~\cite{plos_feedback_delay}.
+
+Na \textbf{Fase~4} os testes com usuários são conduzidos e a monografia é redigida,
+conforme detalhado na próxima subseção.
+
+\subsection{Protocolo de Avaliação}
+\label{sub:avaliacao}
+
+A avaliação do protótipo contempla quatro dimensões complementares, correspondentes ao
+objetivo específico~7: desempenho computacional do \textit{pipeline}, acurácia da estimativa
+de pose em condições reais, acurácia dos modelos de classificação embarcados e eficácia
+pedagógica do sistema de \textit{feedback}.
+
+\subsubsection{Desempenho Computacional}
+A latência do \textit{pipeline} completo será medida quadro a quadro por estágio
+(captura, inferência MediaPipe, inferência dos classificadores TFLite, módulo de ritmo e
+renderização). As métricas
+reportadas incluirão mediana e percentil~95 da latência de ponta a ponta, taxa de quadros por
+segundo, percentual de quadros descartados por \textit{backpressure} e consumo de memória RAM
+durante sessões de 5~minutos. Os testes serão conduzidos em dois dispositivos com
+especificações contrastantes para verificar a robustez do orçamento de latência em hardware
+variado.
+
+\subsubsection{Acurácia da Estimativa de Pose}
+A validade das medições angulares extraídas pelo MediaPipe Pose Landmarker é assumida
+com base nos limites de concordância reportados por Latreche et
+al.~\cite{LATRECHE2023112826}, que compararam os ângulos calculados a partir dos
+\textit{landmarks} do MediaPipe com goniometria clínica e obtiveram valores dentro de
+margens clinicamente aceitáveis para as articulações de joelhos, quadris e ombros ---
+domínio com requisitos de precisão comparáveis aos do Dança~AI.
+
+\subsubsection{Acurácia dos Modelos de Classificação}
+A acurácia dos classificadores TFLite de postura e de identificação de movimentos será
+avaliada em conjunto de teste com rótulos conhecidos: para o classificador de postura,
+os participantes serão fotografados adotando deliberadamente cada uma das cinco categorias
+de desvio e a postura correta, de modo que a classe de referência é determinada a priori;
+para o classificador de movimentos, os participantes executarão cada um dos seis passos
+do forró universitário de forma isolada e identificada. As métricas reportadas incluirão
+acurácia global, precisão e \textit{recall} por classe, além da matriz de confusão para
+identificação de passos sistematicamente confundidos pelo
+modelo~\cite{roggio2024pose, bursa2023tflite}.
+
+\subsubsection{Teste com Usuários}
+Os testes serão conduzidos mediante aprovação do Comitê de Ética em Pesquisa (CEP) da
+UNIFEI e assinatura de Termo de Consentimento Livre e Esclarecido (TCLE) por cada
+participante, em conformidade com a Resolução CNS 510/2016. Serão recrutados aproximadamente 10~participantes praticantes de forró universitário
+de experiência variada (iniciantes a intermediários) da comunidade de dança da UNIFEI,
+tamanho amostral compatível com estudos exploratórios de usabilidade baseados em
+escala SUS~\cite{stanford_ai_dance_coaching}. Os participantes
+executarão sequências do passo básico com e sem o \textit{feedback} do sistema. A coleta de
+dados incluirá: índice de conformidade por módulo --- acurácia dos classificadores de postura
+e movimentos, acertos rítmicos e consistência de transferência de peso --- como indicadores
+objetivos de desempenho; questionário SUS (\textit{System Usability Scale}) para avaliação de usabilidade
+percebida; e entrevista semiestruturada sobre a utilidade e clareza do \textit{feedback}.
+Esse protocolo é compatível com a abordagem adotada por Zhou~\cite{stanford_ai_dance_coaching},
+que demonstrou, em grupo de dez participantes, ganho de acurácia de 55,9\% para 66,8\% com
+\textit{feedback} automatizado baseado em estimativa de pose --- resultado que o presente
+experimento buscará verificar no domínio específico do forró universitário.

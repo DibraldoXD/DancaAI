@@ -1,0 +1,135 @@
+\newpage
+\section{Cronograma de atividades do TCC02}
+\label{sc:cronograma}
+
+O TCC02 está estruturado em quatro fases sequenciais, distribuídas ao longo do segundo
+semestre letivo de 2026. As fases correspondem diretamente aos objetivos específicos 3 a~7
+definidos na Seção~\ref{sec:objetivos}, de modo que o artefato produzido ao término de cada
+fase constitui o pré-requisito técnico da fase seguinte.
+
+\begin{longtable}{p{\textwidth}}
+\toprule%
+\myrowcolour%
+\bfseries F.1: Pipeline de Visão, Transferência de Peso e Postura (Objetivos 3 e 4) \\
+\midrule
+Esta fase implementa o \textit{pipeline} base de captura e análise de pose em tempo real,
+seguido dos dois primeiros módulos de análise: módulo de transferência de peso, com
+classificação esquerdo/direito/neutro a partir dos \textit{landmarks} de quadril; e módulo
+de postura, com regras geométricas sobre \textit{landmarks} da parte superior do corpo e
+classificador TFLite embarcado treinado sobre coordenadas $xyz$ de dançarinos qualificados. Ao término,
+o \textit{pipeline} deve operar a ao menos 20~FPS com latência ponta a ponta inferior a
+100~ms.
+\\
+\midrule
+\myrowcolour%
+\bfseries Atividades planejadas para a F.1 \\
+\midrule
+A.1.1 Integração CameraX + MediaPipe Pose Landmarker em modo \texttt{LIVE\_STREAM} com \textit{delegate} GPU \\
+A.1.2 Implementação do módulo de transferência de peso com \textit{feedback} visual (esquerdo/direito/neutro) \\
+A.1.3 Treinamento e \textit{deploy} do classificador TFLite de postura; validação com conjunto de teste \\
+A.1.4 Benchmark de latência por estágio do \textit{pipeline} em dois dispositivos \textit{mid-range} \\
+\midrule
+\myrowcolour%
+\bfseries Resultados esperados para a F.1 \\
+\midrule
+\textit{Pipeline} funcional extraindo 33~\textit{landmarks} a ao menos 20~FPS com latência
+mediana $<$~100~ms. Módulo de transferência de peso operacional com \textit{feedback} visual
+imediato. Classificador de postura embarcado com acurácia documentada. \\
+\toprule%
+\myrowcolour%
+\bfseries F.2: Ritmo e Identificação de Movimentos (Objetivos 5 e 6) \\
+\midrule
+Esta fase implementa o módulo de ritmo --- metrônomo configurável por BPM com
+\textit{feedback} auditivo via \texttt{AudioTrack} e validação pela comparação entre o
+intervalo inter-batida e a cadência de transferências de peso detectada --- e o módulo de
+identificação de movimentos, com treinamento e \textit{deploy} do classificador TFLite para
+os seis passos do forró universitário e gravação de \textit{templates} DTW com instrutor
+qualificado.
+\\
+\midrule
+\myrowcolour%
+\bfseries Atividades planejadas para a F.2 \\
+\midrule
+A.2.1 Implementação do metrônomo (\texttt{AudioTrack}) e validação rítmica por comparação de IBI \\
+A.2.2 Treinamento e \textit{deploy} do classificador TFLite de movimentos; implementação dos modos Livre e Desafio \\
+A.2.3 Implementação DTW em Kotlin com janela de Sakoe-Chiba; gravação de \textit{templates} com instrutor \\
+A.2.4 Validação da discriminatividade do DTW e da acurácia do classificador de movimentos \\
+A.2.5 Submissão do protocolo de avaliação com usuários ao CEP da UNIFEI \\
+\midrule
+\myrowcolour%
+\bfseries Resultados esperados para a F.2 \\
+\midrule
+Módulo de ritmo operacional com \textit{feedback} auditivo e validação rítmica em tempo real.
+Classificador de movimentos embarcado com acurácia $>$~85\% para os seis passos do forró.
+Módulo DTW integrado com tempo de execução $<$~5~ms por sequência. \\
+\toprule%
+\myrowcolour%
+\bfseries F.3: Integração dos Quatro Módulos e Calibração \\
+\midrule
+Esta fase integra os quatro módulos em interface unificada construída com Jetpack Compose e
+\textit{Material~3}, implementa o relatório de sessão com indicadores por módulo, e calibra
+os limiares de aceitação dos classificadores e do metrônomo em sessões piloto com praticantes
+de forró universitário. O critério de conclusão é \textit{feedback} percebido como responsivo
+e coerente com o movimento executado.
+\\
+\midrule
+\myrowcolour%
+\bfseries Atividades planejadas para a F.3 \\
+\midrule
+A.3.1 Integração dos quatro módulos em interface unificada; telas de configuração (modo, BPM, enquadramento) \\
+A.3.2 Implementação do relatório de sessão com indicadores de desempenho por módulo \\
+A.3.3 Calibração dos limiares de aceitação dos classificadores TFLite e do metrônomo \\
+A.3.4 Sessões piloto para validação de responsividade e coerência do \textit{feedback} \\
+\midrule
+\myrowcolour%
+\bfseries Resultados esperados para a F.3 \\
+\midrule
+Aplicativo integrado com os quatro módulos operacionais, interface completa e relatório de
+sessão. \textit{Feedback} percebido como imediato e coerente nas sessões piloto. \\
+\toprule%
+\myrowcolour%
+\bfseries F.4: Avaliação com Usuários e Redação da Monografia (Objetivo 7) \\
+\midrule
+Esta fase conduz os testes com usuários seguindo o protocolo da Seção~\ref{sub:avaliacao},
+analisa os resultados e produz a monografia final.
+\\
+\midrule
+\myrowcolour%
+\bfseries Atividades planejadas para a F.4 \\
+\midrule
+A.4.1 Condução dos testes com praticantes de forró universitário da UNIFEI \\
+A.4.2 Análise estatística dos dados de latência, acurácia dos classificadores e pontuação SUS \\
+A.4.3 Redação e revisão da monografia final \\
+A.4.4 Preparação e entrega da apresentação do TCC02 \\
+\midrule
+\myrowcolour%
+\bfseries Resultados esperados para a F.4 \\
+\midrule
+Dados de avaliação documentando latência $<$~100~ms, acurácia dos classificadores e pontuação
+SUS~$>$~70. Monografia final entregue e apresentação realizada. \\
+\bottomrule
+\end{longtable}
+
+\begin{ganttchart}[
+y unit title=.6cm,
+y unit chart=.6cm,
+x unit = 2.8cm,
+hgrid,
+vgrid,
+time slot format=isodate-yearmonth,
+time slot unit=month,
+inline,
+bar height=0.7,
+bar/.append style={fill=gray!50, inner sep=0pt}
+]{2026-08}{2026-12}
+\gantttitlecalendar{year, month} \\
+  \ganttbar{F.1: A.1.1-2}{2026-08}{2026-08} \\
+  \ganttbar{F.1: A.1.3-4}{2026-08}{2026-09} \\
+  \ganttbar{F.2: A.2.1-2}{2026-09}{2026-09} \\
+  \ganttbar{F.2: A.2.3-4}{2026-09}{2026-10} \\
+  \ganttbar{F.2: A.2.5 CEP}{2026-09}{2026-10} \\
+  \ganttbar{F.3: A.3.1-2}{2026-10}{2026-10} \\
+  \ganttbar{F.3: A.3.3-4}{2026-10}{2026-11} \\
+  \ganttbar{F.4: A.4.1-2}{2026-11}{2026-11} \\
+  \ganttbar{F.4: A.4.3-4}{2026-11}{2026-12} \\
+\end{ganttchart}

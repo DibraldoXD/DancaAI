@@ -100,7 +100,7 @@ private fun List<DebugSnapshot>.toClipboardText(): String {
         )) {
             lines += "  $label  x=%.3f  y=%.3f  z=%.3f".format(xyz.x, xyz.y, xyz.z)
         }
-        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-0.23".format(
+        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-0.230".format(
             snap.shoulderSpan, snap.zDiff)
         lines += ""
     }
@@ -392,7 +392,7 @@ private fun SnapshotCard(snap: DebugSnapshot) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("CALC ", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
                 fontSize = 12.sp, color = Color.Yellow, modifier = Modifier.width(48.dp))
-            Text("span=%.3f  Zdiff=%.3f  thr=-0.23".format(
+            Text("span=%.3f  Zdiff=%.3f  thr=-0.200".format(
                     snap.shoulderSpan, snap.zDiff),
                 fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
         }

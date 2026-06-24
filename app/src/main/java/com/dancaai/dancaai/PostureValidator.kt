@@ -11,9 +11,10 @@ object PostureValidator {
     private const val RIGHT_HIP      = 24
 
     // Thresholds ajustáveis
-    private const val SHOULDER_LEVEL_THRESHOLD  = 1.0f   // desativado temporariamente
-    private const val SHOULDER_FORWARD_THRESHOLD = 0.23f // diferença Z ombros–quadril para alertar
-    private const val MIN_FRONTAL_SPAN           = 0.15f // span mínimo — só valida de frente
+    private const val SHOULDER_LEVEL_THRESHOLD_DEG  = 5f    // ângulo da linha de ombros com a horizontal
+    private const val SHOULDER_FORWARD_THRESHOLD     = 0.40f // Zdiff normalizado pelo span (invariante à distância/estatura)
+    private const val MIN_FRONTAL_SPAN               = 0.15f // span mínimo — só valida de frente
+    private const val LATERAL_TILT_THRESHOLD_DEG     = 10f  // inclinação lateral do tronco em graus
 
     fun validate(landmarks: List<NormalizedLandmark>): PostureResult {
         if (landmarks.size < 25) return PostureResult.Unknown
@@ -32,39 +33,54 @@ object PostureValidator {
         val issues = mutableListOf<String>()
         var status = PostureStatus.OK
 
-        // 1. Verifica nivelamento dos ombros (eixo Y)
-        val shoulderYDiff = leftShoulder.y() - rightShoulder.y()
-        when {
-            shoulderYDiff > SHOULDER_LEVEL_THRESHOLD -> {
-                issues.add("OMBRO ESQUERDO CAÍDO")
-                status = PostureStatus.WARNING
-            }
-            shoulderYDiff < -SHOULDER_LEVEL_THRESHOLD -> {
-                issues.add("OMBRO DIREITO CAÍDO")
-                status = PostureStatus.WARNING
-            }
+        // 1. Verifica nivelamento dos ombros — ângulo da linha de ombros com a horizontal
+        // Latyshev [11]: desvio MediaPipe nos ombros é 1.6–2.1% da altura — adequado para ângulo.
+        // Threshold 5° está acima da margem de erro do sensor (~2°) e dentro do range clínico aceitável.
+        val shoulderDY = leftShoulder.y() - rightShoulder.y() // positivo = ombro esq mais baixo
+        val shoulderDX = kotlin.math.abs(rightShoulder.x() - leftShoulder.x())
+        val shoulderAngleDeg = Math.toDegrees(
+            kotlin.math.atan2(kotlin.math.abs(shoulderDY).toDouble(), shoulderDX.toDouble())
+        ).toFloat()
+        if (shoulderAngleDeg > SHOULDER_LEVEL_THRESHOLD_DEG) {
+            if (shoulderDY > 0) issues.add("OMBRO ESQUERDO CAÍDO")
+            else                issues.add("OMBRO DIREITO CAÍDO")
+            status = PostureStatus.WARNING
         }
 
         // 2. Verifica ombros encurvados — apenas em vista frontal (portão de span)
+        // Z normalizado pelo span — invariante à distância câmera e estatura (BlazePose [13]).
         val shoulderSpan = kotlin.math.abs(rightShoulder.x() - leftShoulder.x())
         if (shoulderSpan >= MIN_FRONTAL_SPAN) {
-            val avgShoulderZ = (leftShoulder.z() + rightShoulder.z()) / 2f
-            val avgHipZ      = (leftHip.z() + rightHip.z()) / 2f
-            if (avgShoulderZ - avgHipZ < -SHOULDER_FORWARD_THRESHOLD) {
+            val avgShoulderZ    = (leftShoulder.z() + rightShoulder.z()) / 2f
+            val avgHipZ         = (leftHip.z()       + rightHip.z())      / 2f
+            val normalizedZDiff = (avgShoulderZ - avgHipZ) / shoulderSpan
+            if (normalizedZDiff < -SHOULDER_FORWARD_THRESHOLD) {
                 issues.add("OMBROS ENCURVADOS")
                 status = PostureStatus.WARNING
             }
         }
 
-        // 3. Verifica alinhamento lateral (ombros centralizados sobre quadril)
-        val shoulderMidX = (leftShoulder.x() + rightShoulder.x()) / 2f
-        val hipMidX      = (leftHip.x() + rightHip.x()) / 2f
-        val lateralDiff  = shoulderMidX - hipMidX
-
-        if (kotlin.math.abs(lateralDiff) > 0.5f) {
-            val side = if (lateralDiff > 0) "ESQUERDA" else "DIREITA"
-            issues.add("TRONCO INCLINADO PARA $side")
-            status = PostureStatus.WARNING
+        // 3. Verifica inclinação lateral do tronco — apenas em vista frontal (portão de span)
+        // Calcula o ângulo do segmento quadril→ombro com a vertical via atan2.
+        // Latyshev [11]: ombros e quadril têm precisão <3% da altura — adequado para cálculo angular.
+        if (shoulderSpan >= MIN_FRONTAL_SPAN) {
+            val shoulderMidX = (leftShoulder.x() + rightShoulder.x()) / 2f
+            val shoulderMidY = (leftShoulder.y() + rightShoulder.y()) / 2f
+            val hipMidX      = (leftHip.x()       + rightHip.x())      / 2f
+            val hipMidY      = (leftHip.y()        + rightHip.y())      / 2f
+            val dx = shoulderMidX - hipMidX
+            val dy = hipMidY - shoulderMidY  // positivo quando quadril está abaixo do ombro (normal)
+            val lateralTiltDeg = Math.toDegrees(kotlin.math.atan2(dx.toDouble(), dy.toDouble())).toFloat()
+            when {
+                lateralTiltDeg >  LATERAL_TILT_THRESHOLD_DEG -> {
+                    issues.add("TRONCO INCLINADO PARA ESQUERDA")
+                    status = PostureStatus.WARNING
+                }
+                lateralTiltDeg < -LATERAL_TILT_THRESHOLD_DEG -> {
+                    issues.add("TRONCO INCLINADO PARA DIREITA")
+                    status = PostureStatus.WARNING
+                }
+            }
         }
 
         return if (issues.isEmpty()) {

@@ -1,0 +1,36 @@
+\newpage
+\section{Introdução}
+\label{sec:revisao-introducao}
+
+A dança de salão, e em particular o forró universitário, é uma prática de
+ampla penetração cultural no Brasil, com benefícios documentados à saúde
+física, à percepção corporal e à integração social de seus praticantes
+\cite{havt2026dancar, fonseca2012, paiva2019danca}. Apesar de sua
+popularidade, o aprendizado técnico da modalidade permanece dependente da
+presença de um instrutor qualificado, capaz de observar e corrigir aspectos
+como transferência de peso, alinhamento postural, conformidade rítmica e
+execução de passos. A ausência de ferramentas computacionais acessíveis que
+viabilizem o treinamento individual com feedback objetivo representa uma
+lacuna relevante, especialmente em contextos onde o acesso a professores é
+limitado por custo, disponibilidade ou localização geográfica.
+
+O projeto Dança~AI propõe o desenvolvimento de um aplicativo Android em Kotlin
+que utiliza visão computacional para preencher essa lacuna. A partir da câmera
+do dispositivo e do framework MediaPipe \cite{lugaresi2019mediapipe,
+bazarevsky2020blazeposeondevicerealtimebody}, o sistema analisa em tempo real
+quatro dimensões do movimento do praticante: (i)~transferência de peso,
+classificando o apoio como esquerdo, direito ou neutro a partir dos landmarks
+dos membros inferiores; (ii)~postura corporal, avaliando o alinhamento do
+tronco e dos ombros por regras geométricas e modelo de classificação embarcado;
+(iii)~ritmo, por meio de metrônomo configurável com feedback auditivo e
+validação pela comparação entre o BPM definido e a cadência detectada na
+transferência de peso; e (iv)~identificação de movimentos, com classificador
+embarcado para seis passos do forró (Balanço, Base~1, Base~2, Abertura, Giro
+Invertido e Giro em Linha) nos modos Livre e Desafio. Toda a inferência é
+executada localmente no dispositivo, sem dependência de conectividade
+\cite{lee2019ondevice, li2020edgeai}.
+
+Este documento está organizado da seguinte forma: a Seção~2 apresenta a
+motivação do projeto; a Seção~3 sintetiza a revisão bibliográfica; a Seção~4
+enumera os objetivos específicos; as Seções~5 e~6 descrevem os materiais,
+métodos e resultados esperados; e a Seção~7 apresenta o cronograma de execução.

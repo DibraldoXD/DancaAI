@@ -1,0 +1,95 @@
+\newpage
+\section{Resultados esperados}
+\label{sc:resultados}
+
+Ao término do TCC02, espera-se que o Dança~AI comprove a viabilidade técnica do pipeline proposto em hardware de
+consumo e a eficácia do feedback automatizado sobre indicadores mensuráveis de execução nos
+quatro módulos. Os resultados esperados estão organizados em quatro
+dimensões, alinhadas aos objetivos específicos 3 a 7.
+
+\subsection{Protótipo Funcional do Sistema Dança~AI}
+\label{sub:res_prototipo}
+
+Espera-se a entrega de um aplicativo Android funcional que implemente integralmente os
+quatro módulos de análise descritos nos objetivos 3 a 6: captura de vídeo via CameraX e
+extração em tempo real dos 33~\textit{landmarks} corporais pelo MediaPipe Pose Landmarker;
+módulo de transferência de peso, classificando o apoio como esquerdo, direito ou neutro com
+\textit{feedback} visual imediato; módulo de postura, avaliando o alinhamento do tronco e dos
+ombros por regras geométricas e classificador TFLite embarcado; módulo de ritmo, com
+metrônomo configurável por BPM, \textit{feedback} auditivo e validação rítmica em tempo real;
+e módulo de identificação de movimentos, com classificador TFLite para os seis passos do
+forró universitário nos modos Livre e Desafio. O aplicativo deverá operar de forma estável
+durante sessões contínuas de ao menos 5~minutos sem degradação de desempenho em dispositivos
+de segmento intermediário.
+
+A interface, construída em Jetpack Compose, contemplará telas de configuração de sessão ---
+com guia de enquadramento, seleção de modo (Livre ou Desafio) e configuração de BPM ---,
+treino em tempo real com \textit{overlay} de \textit{feedback} e relatório de sessão com
+indicadores por módulo. Esse fluxo permite ao praticante iniciar e encerrar sessões de forma
+autônoma, sem supervisão de um instrutor~\cite{stanford_ai_dance_coaching}.
+
+\subsection{Validação do Desempenho Computacional}
+\label{sub:res_desempenho}
+
+Espera-se que o \textit{pipeline} completo --- captura, inferência MediaPipe, cálculo de
+ângulos, comparação DTW e renderização --- opere com latência mediana inferior a 100~ms em
+dispositivos Android de segmento intermediário, atendendo ao orçamento estabelecido na
+Seção~\ref{subsub:otimizacao} com base nos limites neurológicos de percepção de
+responsividade documentados na literatura~\cite{plos_feedback_delay}. Os dados de latência
+serão apresentados por estágio do \textit{pipeline}, com distinção entre o tempo de
+inferência do modelo (estimado entre 20--40~ms com \textit{delegate} GPU, conforme Lee et
+al.~\cite{lee2019ondevice}) e os demais estágios de processamento. Espera-se ainda taxa
+mínima de 20~FPS, suficiente para que o \textit{overlay} seja percebido como fluido durante a
+execução dos movimentos.
+
+A acurácia dos ângulos articulares calculados a partir dos \textit{landmarks} do MediaPipe
+deverá situar-se dentro dos limites de concordância estabelecidos por Latreche et
+al.~\cite{LATRECHE2023112826}, que reportaram valores clinicamente aceitáveis para aplicações
+de análise de movimento --- domínio com requisitos de precisão comparáveis aos do Dança~AI,
+conforme discutido na Seção~\ref{sub:visao}.
+
+\subsection{Módulos de Classificação e Comparação de Movimentos}
+\label{sub:res_dtw}
+
+Espera-se que os classificadores TFLite de postura e de identificação de movimentos
+apresentem acurácia global superior a 85\% no conjunto de teste, com precisão e
+\textit{recall} por classe documentados para cada um dos seis passos do forró universitário
+(Balanço, Base~1, Base~2, Abertura, Giro Invertido e Giro em
+Linha)~\cite{roggio2024pose, bursa2023tflite}. O módulo de ritmo deverá detectar desvios
+entre a cadência de transferências de peso e o BPM configurado com margem de erro inferior a
+um compasso, gerando \textit{feedback} visual coerente com a percepção do
+praticante~\cite{rose2019metronome}.
+
+O módulo de comparação via DTW deverá produzir pontuações que discriminem de forma
+consistente entre execuções corretas e incorretas, com correlação verificável com a avaliação
+qualitativa de um instrutor qualificado de forró universitário~\cite{dynamic_dance_warping}. A
+implementação em Kotlin puro com restrição de janela de Sakoe-Chiba deverá apresentar tempo
+de execução inferior a 5~ms por sequência, de modo que o módulo não represente gargalo no
+orçamento de latência global~\cite{skeleton_dtw_sport}.
+
+\subsection{Eficácia Pedagógica e Usabilidade}
+\label{sub:res_pedagogia}
+
+Espera-se que os testes com usuários evidenciem melhoria mensurável na acurácia de execução
+após sessões de prática assistida pelo Dança~AI, avaliada pelos índices de conformidade de
+cada módulo --- transferência de peso, postura, ritmo e identificação de movimentos --- antes
+e após cada sessão. Como referência, o estudo de
+Zhou~\cite{stanford_ai_dance_coaching} documentou ganho de 55,9\% para 66,8\% de acurácia
+em grupo de dez praticantes com \textit{feedback} baseado em estimativa de pose, com 85\% das
+intervenções do sistema avaliadas como coerentes pelos participantes. Espera-se que os dados
+obtidos no presente experimento confirmem tendência de melhoria análoga no contexto específico
+do forró universitário, eventualmente com variações associadas ao nível de experiência prévia
+dos participantes.
+
+Para a dimensão de usabilidade, espera-se pontuação SUS média superior a 70 --- limiar
+correspondente à faixa de usabilidade classificada como ``boa'' --- indicando que o sistema é
+percebido como utilizável por praticantes sem formação técnica. As entrevistas semiestruturadas
+deverão fornecer evidências qualitativas sobre quais dimensões do \textit{feedback} ---
+transferência de peso, postural, rítmica ou de identificação de movimentos --- são
+percebidas como mais úteis pelos praticantes, orientando a priorização de melhorias para
+versões futuras do sistema. Em conjunto, esses resultados permitirão posicionar o Dança~AI
+como contribuição original ao estado da arte sintetizado na
+Tabela~\ref{tab:correlatos}: um sistema que reúne, pela primeira vez em um único aplicativo
+autônomo, inferência completamente \textit{on-device}, avaliação biomecânica baseada em
+ângulos articulares, comparação de sequências via DTW e foco em uma modalidade de dança de
+salão específica~\cite{THARATIPYAKUL2024e36589}.
