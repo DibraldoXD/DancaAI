@@ -15,6 +15,7 @@ import com.dancaai.app.OverlayView
 import com.dancaai.app.PoseLandmarkerHelper
 import com.dancaai.app.PostureValidator
 import com.dancaai.app.StepCounter
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -40,13 +41,20 @@ class PoseCameraView @JvmOverloads constructor(
     private var lifecycleOwner: LifecycleOwner? = null
     private var isFrontCamera = false
 
+    // ProcessCameraProvider.getInstance() é assíncrono (a 1ª chamada demora um
+    // pouco pra resolver). Se switchCamera()/bind() for chamado de novo antes do
+    // callback anterior rodar — típico de um toque duplo logo no início do treino,
+    // antes da câmera terminar de abrir —, duas inicializações do PoseLandmarkerHelper
+    // (que usa GPU) disparavam quase ao mesmo tempo e derrubavam o app. Esse contador
+    // invalida qualquer callback que não seja mais o mais recente.
+    private var bindGeneration = 0
+
     /** Notifica se há (ou não) uma pessoa detectada no enquadramento. */
     var onPersonDetected: ((Boolean) -> Unit)? = null
 
     /** Último frame de landmarks detectado; null quando nenhuma pessoa está no enquadramento. */
-    var currentLandmarks: List<com.google.mediapipe.tasks.components.containers.NormalizedLandmark>? = null
+    var currentLandmarks: List<NormalizedLandmark>? = null
         private set
-
 
     /**
      * Chamado quando a detecção de pose não pôde ser inicializada — tipicamente
@@ -73,10 +81,14 @@ class PoseCameraView @JvmOverloads constructor(
 
     private fun startCamera() {
         val owner = lifecycleOwner ?: return
+        val myGeneration = ++bindGeneration
         poseHelper?.clearPoseLandmarker()
 
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
+            // uma chamada mais recente (outro toque em "trocar câmera") já assumiu — descarta esta.
+            if (myGeneration != bindGeneration) return@addListener
+
             val cameraProvider = providerFuture.get()
             cameraProvider.unbindAll()
 
@@ -131,8 +143,6 @@ class PoseCameraView @JvmOverloads constructor(
                 val first = landmarks[0]
                 AngleCalculator.compute(first)?.let { overlayView.updateAngles(it) }
                 overlayView.updatePosture(PostureValidator.validate(first))
-                overlayView.updateDebugLandmarks(first)
-
             }
         }
     }
