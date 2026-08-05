@@ -20,6 +20,13 @@ class PoseLandmarkerHelper(
 
     private var poseLandmarker: PoseLandmarker? = null
 
+    // detectLiveStream() roda na thread de análise da câmera (cameraExecutor) e
+    // clearPoseLandmarker() roda na main thread (ao trocar de câmera/encerrar).
+    // Sem essa trava, close() pode liberar o objeto nativo do MediaPipe exatamente
+    // enquanto detectAsync() ainda está usando-o em outra thread — crash nativo
+    // (SIGSEGV), não uma exception Java capturável.
+    private val lock = Any()
+
     init {
         setupPoseLandmarker()
     }
@@ -67,7 +74,9 @@ class PoseLandmarkerHelper(
         )
 
         val mpImage = BitmapImageBuilder(rotatedBitmap).build()
-        poseLandmarker?.detectAsync(mpImage, frameTime)
+        synchronized(lock) {
+            poseLandmarker?.detectAsync(mpImage, frameTime)
+        }
     }
 
     private fun returnLivestreamResult(result: PoseLandmarkerResult, input: MPImage) {
@@ -81,8 +90,10 @@ class PoseLandmarkerHelper(
     }
 
     fun clearPoseLandmarker() {
-        poseLandmarker?.close()
-        poseLandmarker = null
+        synchronized(lock) {
+            poseLandmarker?.close()
+            poseLandmarker = null
+        }
     }
 
     data class ResultBundle(

@@ -74,5 +74,31 @@ O projeto consiste em um aplicativo mobile em kotlin de treino solo de dança de
 - Os movimentos serão validados por um modelo embarcado mobile de classificação treinado com vídeos de dançarinos executando os passos, utilizando os pontos corporais como apoio.
 - Essa funcionalidade terá 2 modos: Livre(retorna qual passo o usuário está fazendo e retorna se está correto) e Desafio(o usuário deve seguir uma sequência de passos pré definida e o aplicativo dirá se ele acertou ou errou a sequência).
 
+## 6. Fluxo de Desenvolvimento do Aplicativo
+
+As seções 1–4 regem o auxílio na escrita acadêmica (TCC01/TCC02). Esta seção rege o auxílio no **desenvolvimento do app Android** e tem precedência sempre que a conversa for sobre código.
+
+**Arquitetura**
+- Unidirectional Data Flow: Composable fica enxuto (só UI) → `ViewModel` (`androidx.lifecycle:lifecycle-viewmodel-compose`, já é dependência) expõe `StateFlow`/`UiState` → lógica de domínio pura e testável em classes separadas (padrão já usado em `AngleCalculator`, `PostureValidator`, `StepCounter`).
+- Hoje o estado de várias telas vive espalhado em `remember {}` (ex.: `TrainingScreen`). Migrar para `ViewModel` as telas que forem mexidas e tiverem lógica não-trivial — não precisa migrar tudo de uma vez.
+- Sem injeção de dependência (Hilt/Koin) por enquanto: escopo de TCC solo não justifica a complexidade extra.
+
+**Testes**
+- Toda lógica de domínio nova (scheduler de metrônomo, scoring, futuro DTW) deve ter teste unitário JUnit mínimo antes de ser considerada pronta. As pastas `app/src/test` e `app/src/androidTest` já existem para isso.
+
+**Commits e branches**
+- Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `chore:`) — já usado informalmente no histórico do repo, manter formalizado.
+- Uma branch por funcionalidade (ex.: `feature/metronomo`), merge via PR para `main`. Sem commit direto na `main` para mudanças não-triviais.
+
+**Modo Planejamento (dev)**
+- Mesmo fluxo planejar → validar → executar das seções de escrita: para módulo novo ou mudança arquitetural, apresente um plano técnico curto e espere aprovação antes de gerar código extenso. Para bug pontual ou ajuste pequeno e óbvio, pode implementar direto.
+
+**Rigor técnico**
+- Nunca presumir que uma API do MediaPipe/AndroidX/Compose existe ou se comporta de certa forma — conferir contra a versão travada em `app/build.gradle.kts`/`gradle/libs.versions.toml` antes de usar.
+
+**Prioridades atuais** (lacunas identificadas em relação ao plano de trabalho do TCC)
+- Ritmo/beat: metrônomo configurável (BPM + tipo de batida) e, depois, sincronização com a transferência de peso.
+- Scoring real de sessão (hoje mockado em `TrainingScreen`/`MockRepository`).
+- Unificar as constantes de threshold de postura hoje duplicadas entre `PostureValidator.kt`, `OverlayView.kt` e `TrainingScreen.kt`.
 
 

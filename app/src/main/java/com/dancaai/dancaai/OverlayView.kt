@@ -17,7 +17,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
     private var isFrontCamera: Boolean = false
     private var angles: BodyAngles? = null
     private var postureResult: PostureResult = PostureResult.Unknown
-    private var debugLandmarks: List<NormalizedLandmark>? = null
     private var weightInfo: WeightInfo = WeightInfo(WeightLeg.NEUTRAL, MovementDirection.NEUTRAL, false, 0, 0)
 
     // ── Paints ──────────────────────────────────────────────────────────────
@@ -98,25 +97,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         setShadowLayer(3f, 1f, 1f, Color.BLACK)
     }
 
-    private val debugBgPaint = Paint().apply {
-        color = Color.argb(170, 0, 0, 0)
-        style = Paint.Style.FILL
-    }
-
-    private val debugTextPaint = Paint().apply {
-        color = Color.WHITE
-        textSize = 24f
-        typeface = Typeface.MONOSPACE
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
-    }
-
-    private val debugLabelPaint = Paint().apply {
-        color = Color.CYAN
-        textSize = 24f
-        typeface = Typeface.MONOSPACE
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-    }
-
     // ── Métodos públicos ─────────────────────────────────────────────────────
 
     fun setResults(
@@ -142,11 +122,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         invalidate()
     }
 
-    fun updateDebugLandmarks(landmarks: List<NormalizedLandmark>) {
-        this.debugLandmarks = landmarks
-        invalidate()
-    }
-
     fun updateWeightInfo(info: WeightInfo) {
         weightInfo = info
         invalidate()
@@ -157,8 +132,7 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Painel de debug sempre visível, independente de pose detectada
-        drawDebugPanel(canvas)
+        // Painel de peso sempre visível, independente de pose detectada
         drawWeightPanel(canvas)
 
         val results = results ?: return
@@ -219,13 +193,13 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
             drawAngle(canvas, landmarks[14], "%.0f°".format(a.rightElbow),    scaleFactor, offsetX, offsetY)
         }
 
-        // 5. Feedback de postura na parte inferior da tela
+        // 5. Feedback de postura — acima do HUD inferior (metrônomo/registrar/encerrar)
         when (val p = postureResult) {
             is PostureResult.Good -> {
                 canvas.drawText(
                     "✓ POSTURA OK",
                     width * 0.5f - 130f,
-                    height * 0.93f,
+                    height * 0.62f,
                     postureOkPaint
                 )
             }
@@ -234,7 +208,7 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
                     canvas.drawText(
                         "⚠ $issue",
                         width * 0.5f - 200f,
-                        height * 0.88f + i * 44f,
+                        height * 0.50f + i * 44f,
                         postureWarnPaint
                     )
                 }
@@ -243,7 +217,7 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
                 canvas.drawText(
                     "Aguardando pose...",
                     width * 0.5f - 160f,
-                    height * 0.93f,
+                    height * 0.62f,
                     anglePaint
                 )
             }
@@ -304,61 +278,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
                 "⚠ MARCAÇÃO INCORRETA",
                 left + padH, top + padV + lineH * 2.82f, weightErrorPaint
             )
-        }
-    }
-
-    private fun drawDebugPanel(canvas: Canvas) {
-        data class Row(val label: String, val idx: Int)
-        val rows = listOf(
-            Row("NAR  ", 0),
-            Row("ORE-E", 7),  Row("ORE-D", 8),
-            Row("OMB-E", 11), Row("OMB-D", 12),
-            Row("QDR-E", 23), Row("QDR-D", 24),
-            Row("JOE-E", 25), Row("JOE-D", 26),
-            Row("TRN-E", 27), Row("TRN-D", 28),
-        )
-
-        val lineH  = 28f
-        val panelW = 430f
-        val panelH = (rows.size + 1) * lineH + 44f  // +1 para linha derivada
-        val left   = width - panelW - 8f
-        val top    = 8f
-
-        canvas.drawRoundRect(
-            RectF(left, top, left + panelW, top + panelH),
-            8f, 8f, debugBgPaint
-        )
-
-        rows.forEachIndexed { i, row ->
-            val lmk = debugLandmarks?.getOrNull(row.idx)
-            val y   = top + 28f + i * lineH
-            canvas.drawText("${row.label}:", left + 8f, y, debugLabelPaint)
-            val value = if (lmk != null)
-                "x=%.3f y=%.3f z=%.3f".format(lmk.x(), lmk.y(), lmk.z())
-            else
-                "aguardando..."
-            canvas.drawText(value, left + 90f, y, debugTextPaint)
-        }
-
-        // Linha de métricas derivadas para diagnóstico Z
-        val lm = debugLandmarks
-        val yD = top + 28f + rows.size * lineH + 6f
-        canvas.drawText("CALC :", left + 8f, yD, debugLabelPaint)
-        if (lm != null && lm.size >= 25) {
-            val nose  = lm[0]
-            val lS    = lm[11]; val rS = lm[12]
-            val span  = kotlin.math.abs(rS.x() - lS.x())
-            val avgShZ = (lS.z() + rS.z()) / 2f
-            val normNS = if (span > 0.01f) (nose.z() - avgShZ) / span else 0f
-            val lH = lm.getOrNull(23); val rH = lm.getOrNull(24)
-            val avgHipZ = if (lH != null && rH != null) (lH.z() + rH.z()) / 2f else 0f
-            val zDiff   = avgShZ - avgHipZ
-            canvas.drawText(
-                "span=%.3f  Zdiff=%.3f  thr=-0.250".format(span, zDiff),
-                left + 90f, yD, debugTextPaint
-            )
-        } else {
-            canvas.drawText("aguardando...", left + 90f, yD, debugTextPaint)
         }
     }
 

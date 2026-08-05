@@ -56,9 +56,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.dancaai.app.audio.Metronome
+import com.dancaai.app.audio.MetronomeBpmStore
 import com.dancaai.app.camera.PoseCameraView
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
+import com.dancaai.app.ui.components.MetronomeControl
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
@@ -165,6 +168,26 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
     val snapshots = remember { mutableStateListOf<DebugSnapshot>() }
     var showDebugResults by remember { mutableStateOf(false) }
 
+    // ── Metrônomo: motor de áudio + estado da UI (play manual, BPM persistido) ──
+    val bpmStore = remember { MetronomeBpmStore(context) }
+    val metronome = remember { Metronome() }
+    var metronomeBpm by remember { mutableIntStateOf(bpmStore.load()) }
+    var metronomePlaying by remember { mutableStateOf(false) }
+    var metronomeBeat by remember { mutableIntStateOf(-1) }
+
+    DisposableEffect(Unit) {
+        metronome.onBeat = { idx -> metronomeBeat = idx }
+        onDispose { metronome.stop() }
+    }
+    LaunchedEffect(metronomeBpm) {
+        metronome.bpm = metronomeBpm
+        bpmStore.save(metronomeBpm)
+    }
+    // silencia o metrônomo quando a sessão é pausada, sem perder o BPM/estado "estava tocando"
+    LaunchedEffect(paused) {
+        if (paused) metronome.stop() else if (metronomePlaying) metronome.start()
+    }
+
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
         if (hasPermission) {
             AndroidView(
@@ -201,7 +224,7 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                 icon = Icons.Rounded.FlipCameraAndroid,
                 contentDescription = "Alternar câmera",
                 onClick = { cameraViewRef.value?.switchCamera() },
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 92.dp, end = 16.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
             )
         }
 
@@ -230,6 +253,16 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            MetronomeControl(
+                bpm = metronomeBpm,
+                playing = metronomePlaying,
+                activeBeat = metronomeBeat,
+                onBpmChange = { metronomeBpm = it },
+                onTogglePlay = {
+                    metronomePlaying = !metronomePlaying
+                    if (metronomePlaying) metronome.start() else metronome.stop()
+                },
+            )
             RegisterButton(
                 count = snapshots.size,
                 onClick = {
