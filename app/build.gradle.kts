@@ -55,4 +55,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation(libs.junit)
 }

@@ -128,8 +128,6 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
                 val postureResult = PostureValidator.validate(landmarks)
                 binding.overlayView.updatePosture(postureResult)
 
-                binding.overlayView.updateDebugLandmarks(landmarks)
-
                 val guideResult = CameraGuide.evaluate(landmarks)
                 binding.cameraGuideView.update(guideResult)
             }
