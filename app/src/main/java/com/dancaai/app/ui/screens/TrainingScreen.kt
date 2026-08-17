@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import androidx.compose.ui.Alignment
@@ -60,9 +61,11 @@ import com.dancaai.app.audio.Metronome
 import com.dancaai.app.audio.MetronomeBpmStore
 import com.dancaai.app.PostureValidator
 import com.dancaai.app.camera.PoseCameraView
+import com.dancaai.app.export.SheetsUploader
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.MetronomeControl
+import com.dancaai.app.ui.components.beatLabels
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
@@ -73,7 +76,7 @@ private const val TOTAL_SECONDS = 5 * 60
 private data class LandmarkXYZ(val x: Float, val y: Float, val z: Float)
 
 private data class DebugSnapshot(
-    val number:         Int,
+    val label:          String,
     val nose:           LandmarkXYZ,
     val leftEar:        LandmarkXYZ,
     val rightEar:       LandmarkXYZ,
@@ -93,7 +96,7 @@ private data class DebugSnapshot(
 private fun List<DebugSnapshot>.toClipboardText(): String {
     val lines = mutableListOf("DancaAI — Dados de Debug ($size captura${if (size != 1) "s" else ""})", "")
     forEach { snap ->
-        lines += "Captura #${snap.number}"
+        lines += snap.label
         for ((label, xyz) in listOf(
             "NAR  " to snap.nose,
             "ORE-E" to snap.leftEar,       "ORE-D" to snap.rightEar,
@@ -111,7 +114,7 @@ private fun List<DebugSnapshot>.toClipboardText(): String {
     return lines.joinToString("\n")
 }
 
-private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
+private fun List<NormalizedLandmark>.toSnapshot(label: String): DebugSnapshot {
     fun at(i: Int): LandmarkXYZ {
         val lm = getOrNull(i)
         return LandmarkXYZ(lm?.x() ?: 0f, lm?.y() ?: 0f, lm?.z() ?: 0f)
@@ -122,7 +125,7 @@ private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
     val zDiff = if (lS != null && rS != null && lH != null && rH != null)
         (lS.z() + rS.z()) / 2f - (lH.z() + rH.z()) / 2f else 0f
     return DebugSnapshot(
-        number        = n,
+        label         = label,
         nose          = at(0),
         leftEar       = at(7),  rightEar      = at(8),
         leftShoulder  = at(11), rightShoulder = at(12),
@@ -131,6 +134,27 @@ private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
         leftAnkle     = at(27), rightAnkle    = at(28),
         shoulderSpan  = span,
         zDiff         = zDiff,
+    )
+}
+
+/** Uma linha pro Google Sheets, na mesma ordem sempre — ver SheetsUploader/README. */
+private fun DebugSnapshot.toSheetRow(): List<Any> {
+    val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        .format(java.util.Date())
+    return listOf(
+        timestamp, label,
+        nose.x, nose.y, nose.z,
+        leftEar.x, leftEar.y, leftEar.z,
+        rightEar.x, rightEar.y, rightEar.z,
+        leftShoulder.x, leftShoulder.y, leftShoulder.z,
+        rightShoulder.x, rightShoulder.y, rightShoulder.z,
+        leftHip.x, leftHip.y, leftHip.z,
+        rightHip.x, rightHip.y, rightHip.z,
+        leftKnee.x, leftKnee.y, leftKnee.z,
+        rightKnee.x, rightKnee.y, rightKnee.z,
+        leftAnkle.x, leftAnkle.y, leftAnkle.z,
+        rightAnkle.x, rightAnkle.y, rightAnkle.z,
+        shoulderSpan, zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD,
     )
 }
 
@@ -143,6 +167,7 @@ private fun List<NormalizedLandmark>.toSnapshot(n: Int): DebugSnapshot {
 fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     var hasPermission by remember {
         mutableStateOf(
@@ -169,6 +194,16 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
     val snapshots = remember { mutableStateListOf<DebugSnapshot>() }
     var showDebugResults by remember { mutableStateOf(false) }
 
+    // captura landmarks atuais com o rótulo dado, guarda localmente e envia pro Sheets
+    // (se configurado — SheetsUploader.upload() é no-op silencioso sem a URL).
+    fun captureAndUpload(label: String) {
+        cameraViewRef.value?.currentLandmarks?.let { lm ->
+            val snap = lm.toSnapshot(label)
+            snapshots.add(snap)
+            SheetsUploader.upload(coroutineScope, snap.toSheetRow())
+        }
+    }
+
     // ── Metrônomo: motor de áudio + estado da UI (play manual, BPM persistido) ──
     val bpmStore = remember { MetronomeBpmStore(context) }
     val metronome = remember { Metronome() }
@@ -176,8 +211,28 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
     var metronomePlaying by remember { mutableStateOf(false) }
     var metronomeBeat by remember { mutableIntStateOf(-1) }
 
+    // ── Captura contínua: arma no ciclo atual, captura um snapshot por tempo (1-2-3-Pausa) no ciclo seguinte ──
+    var continuousArmed by remember { mutableStateOf(false) }
+    var continuousCapturing by remember { mutableStateOf(false) }
+    var continuousCycleCount by remember { mutableIntStateOf(0) }
+
     DisposableEffect(Unit) {
-        metronome.onBeat = { idx -> metronomeBeat = idx }
+        metronome.onBeat = { idx ->
+            metronomeBeat = idx
+            when {
+                continuousCapturing -> {
+                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${beatLabels[idx]}")
+                    if (idx == beatLabels.lastIndex) continuousCapturing = false
+                }
+                continuousArmed && idx == 0 -> {
+                    // início de um novo ciclo: a partir daqui é este ciclo que é capturado
+                    continuousArmed = false
+                    continuousCapturing = true
+                    continuousCycleCount++
+                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${beatLabels[idx]}")
+                }
+            }
+        }
         onDispose { metronome.stop() }
     }
     LaunchedEffect(metronomeBpm) {
@@ -187,6 +242,13 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
     // silencia o metrônomo quando a sessão é pausada, sem perder o BPM/estado "estava tocando"
     LaunchedEffect(paused) {
         if (paused) metronome.stop() else if (metronomePlaying) metronome.start()
+    }
+    // se o usuário desligar o metrônomo no meio do processo, desarma a captura contínua
+    LaunchedEffect(metronomePlaying) {
+        if (!metronomePlaying) {
+            continuousArmed = false
+            continuousCapturing = false
+        }
     }
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
@@ -264,14 +326,24 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                     if (metronomePlaying) metronome.start() else metronome.stop()
                 },
             )
-            RegisterButton(
-                count = snapshots.size,
-                onClick = {
-                    cameraViewRef.value?.currentLandmarks?.let { lm ->
-                        snapshots.add(lm.toSnapshot(snapshots.size + 1))
-                    }
-                },
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RegisterButton(
+                    count = snapshots.size,
+                    onClick = { captureAndUpload("Captura #${snapshots.size + 1}") },
+                )
+                ContinuousCaptureButton(
+                    armed = continuousArmed,
+                    capturing = continuousCapturing,
+                    enabled = metronomePlaying,
+                    onClick = {
+                        when {
+                            continuousCapturing -> Unit // ciclo em andamento, não cancela
+                            continuousArmed -> continuousArmed = false // cancela o aviso
+                            else -> continuousArmed = true
+                        }
+                    },
+                )
+            }
             EndButton {
                 if (snapshots.isEmpty()) onEnd()
                 else showDebugResults = true
@@ -335,6 +407,40 @@ private fun RegisterButton(count: Int, onClick: () -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             color = Color.White,
         )
+    }
+}
+
+/**
+ * Captura contínua: sincronizada com o compasso do metrônomo. Ao ativar, avisa que a
+ * captura vai acontecer no próximo ciclo (1-2-3-Pausa); quando o ciclo seguinte começa,
+ * registra um snapshot em cada um dos 4 tempos. Exige o metrônomo tocando.
+ */
+@Composable
+private fun ContinuousCaptureButton(armed: Boolean, capturing: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val bg = when {
+        capturing -> Color(0xFFEF4444) // vermelho: capturando agora
+        armed -> Color(0xFFF59E0B)     // laranja: aviso, captura no próximo ciclo
+        enabled -> Color.White.copy(alpha = 0.12f)
+        else -> Color.White.copy(alpha = 0.06f)
+    }
+    val label = when {
+        capturing -> "Capturando…"
+        armed -> "Próx. ciclo"
+        else -> "Contínua"
+    }
+    val textColor = if (enabled || armed || capturing) Color.White else Color.White.copy(alpha = 0.35f)
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(44.dp)
+            .clip(Shapes.pill)
+            .background(bg)
+            .border(1.dp, Color.White.copy(alpha = if (armed || capturing) 0.3f else 0.1f), Shapes.pill)
+            .clickable(enabled = enabled || armed, onClick = onClick)
+            .padding(horizontal = 20.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, color = textColor)
     }
 }
 
@@ -408,7 +514,7 @@ private fun SnapshotCard(snap: DebugSnapshot) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            "Captura #${snap.number}",
+            snap.label,
             fontWeight = FontWeight.Bold,
             color = DcaTheme.colors.accent,
             style = MaterialTheme.typography.labelMedium,

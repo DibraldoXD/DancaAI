@@ -1,6 +1,15 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+}
+
+// Segredos locais (nunca commitados — local.properties já é ignorado pelo git).
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) load(FileInputStream(file))
 }
 
 android {
@@ -13,11 +22,19 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // URL do Google Apps Script que recebe as capturas de pontos corporais
+        // (ver README/CLAUDE.md). Vazio = envio automático desativado, sem quebrar o build.
+        buildConfigField(
+            "String", "SHEETS_WEBHOOK_URL",
+            "\"${localProperties.getProperty("SHEETS_WEBHOOK_URL", "")}\"",
+        )
     }
 
     buildFeatures {
         viewBinding = true
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
