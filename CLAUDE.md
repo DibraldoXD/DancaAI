@@ -89,6 +89,8 @@ As seções 1–4 regem o auxílio na escrita acadêmica (TCC01/TCC02). Esta se�
 **Commits e branches**
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `chore:`) — já usado informalmente no histórico do repo, manter formalizado.
 - Uma branch por funcionalidade (ex.: `feature/metronomo`), merge via PR para `main`. Sem commit direto na `main` para mudanças não-triviais.
+- Nunca incluir a linha `Co-Authored-By: Claude ...` nas mensagens de commit deste projeto.
+- **Início de sessão:** antes de começar a trabalhar em código, verificar se o repositório local está atualizado com o GitHub (`git fetch` + comparar com o remoto). Se houver commits novos no remoto que ainda não estão local, avisar e sincronizar (pull/rebase) antes de seguir.
 
 **Modo Planejamento (dev)**
 - Mesmo fluxo planejar → validar → executar das seções de escrita: para módulo novo ou mudança arquitetural, apresente um plano técnico curto e espere aprovação antes de gerar código extenso. Para bug pontual ou ajuste pequeno e óbvio, pode implementar direto.

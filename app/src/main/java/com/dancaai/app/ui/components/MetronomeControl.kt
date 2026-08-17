@@ -79,7 +79,8 @@ fun MetronomeControl(
     }
 }
 
-private val beatLabels = listOf("1", "2", "3", "Pausa")
+/** Rótulos do compasso fixo de 4 tempos do metrônomo — reaproveitado pela captura contínua. */
+internal val beatLabels = listOf("1", "2", "3", "Pausa")
 
 @Composable
 private fun BeatLabels(activeBeat: Int) {
