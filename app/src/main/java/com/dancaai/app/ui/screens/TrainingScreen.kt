@@ -58,6 +58,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.dancaai.app.audio.Metronome
 import com.dancaai.app.audio.MetronomeBpmStore
+import com.dancaai.app.PostureValidator
 import com.dancaai.app.camera.PoseCameraView
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
@@ -103,8 +104,8 @@ private fun List<DebugSnapshot>.toClipboardText(): String {
         )) {
             lines += "  $label  x=%.3f  y=%.3f  z=%.3f".format(xyz.x, xyz.y, xyz.z)
         }
-        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-0.230".format(
-            snap.shoulderSpan, snap.zDiff)
+        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-%.3f".format(
+            snap.shoulderSpan, snap.zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD)
         lines += ""
     }
     return lines.joinToString("\n")
@@ -425,8 +426,8 @@ private fun SnapshotCard(snap: DebugSnapshot) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("CALC ", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
                 fontSize = 12.sp, color = Color.Yellow, modifier = Modifier.width(48.dp))
-            Text("span=%.3f  Zdiff=%.3f  thr=-0.200".format(
-                    snap.shoulderSpan, snap.zDiff),
+            Text("span=%.3f  Zdiff=%.3f  thr=-%.3f".format(
+                    snap.shoulderSpan, snap.zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD),
                 fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
         }
     }

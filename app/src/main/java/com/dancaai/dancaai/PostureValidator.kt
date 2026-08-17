@@ -10,9 +10,11 @@ object PostureValidator {
     private const val LEFT_HIP       = 23
     private const val RIGHT_HIP      = 24
 
-    // Thresholds ajustáveis
+    // Thresholds ajustáveis. SHOULDER_FORWARD_THRESHOLD é internal (não private)
+    // de propósito: é a única fonte de verdade do threshold de ombros encurvados,
+    // referenciada também no debug do TrainingScreen para não haver drift entre os dois.
     private const val SHOULDER_LEVEL_THRESHOLD_DEG  = 5f    // ângulo da linha de ombros com a horizontal
-    private const val SHOULDER_FORWARD_THRESHOLD     = 0.40f // Zdiff normalizado pelo span (invariante à distância/estatura)
+    internal const val SHOULDER_FORWARD_THRESHOLD    = 0.40f // Zdiff normalizado pelo span (invariante à distância/estatura)
     private const val MIN_FRONTAL_SPAN               = 0.15f // span mínimo — só valida de frente
     private const val LATERAL_TILT_THRESHOLD_DEG     = 10f  // inclinação lateral do tronco em graus
 
