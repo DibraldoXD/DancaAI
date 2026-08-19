@@ -481,11 +481,7 @@ private fun PostureBadge(result: PostureResult) {
             )
 
         is PostureResult.Bad -> Triple(
-            // os rótulos do PostureValidator vêm em caixa alta, boa para o Canvas
-            // e agressiva demais para um chip de texto
-            result.issues.joinToString(" · ") { issue ->
-                issue.lowercase().replaceFirstChar { it.uppercase() }
-            },
+            result.issues.joinToString(" · ") { it.label },
             Color(0xFFF87171),
             Icons.Rounded.WarningAmber,
         )

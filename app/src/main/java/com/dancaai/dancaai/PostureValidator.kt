@@ -32,7 +32,7 @@ object PostureValidator {
                 .any { it.visibility().orElse(0f) < minVisibility }
         ) return PostureResult.Unknown
 
-        val issues = mutableListOf<String>()
+        val issues = mutableListOf<PostureIssue>()
         var status = PostureStatus.OK
 
         // 1. Verifica nivelamento dos ombros — ângulo da linha de ombros com a horizontal
@@ -44,8 +44,8 @@ object PostureValidator {
             kotlin.math.atan2(kotlin.math.abs(shoulderDY).toDouble(), shoulderDX.toDouble())
         ).toFloat()
         if (shoulderAngleDeg > SHOULDER_LEVEL_THRESHOLD_DEG) {
-            if (shoulderDY > 0) issues.add("OMBRO ESQUERDO CAÍDO")
-            else                issues.add("OMBRO DIREITO CAÍDO")
+            if (shoulderDY > 0) issues.add(PostureIssue.LEFT_SHOULDER_DROP)
+            else                issues.add(PostureIssue.RIGHT_SHOULDER_DROP)
             status = PostureStatus.WARNING
         }
 
@@ -57,7 +57,7 @@ object PostureValidator {
             val avgHipZ         = (leftHip.z()       + rightHip.z())      / 2f
             val normalizedZDiff = (avgShoulderZ - avgHipZ) / shoulderSpan
             if (normalizedZDiff < -SHOULDER_FORWARD_THRESHOLD) {
-                issues.add("OMBROS ENCURVADOS")
+                issues.add(PostureIssue.SHOULDERS_FORWARD)
                 status = PostureStatus.WARNING
             }
         }
@@ -75,11 +75,11 @@ object PostureValidator {
             val lateralTiltDeg = Math.toDegrees(kotlin.math.atan2(dx.toDouble(), dy.toDouble())).toFloat()
             when {
                 lateralTiltDeg >  LATERAL_TILT_THRESHOLD_DEG -> {
-                    issues.add("TRONCO INCLINADO PARA ESQUERDA")
+                    issues.add(PostureIssue.TRUNK_TILT_LEFT)
                     status = PostureStatus.WARNING
                 }
                 lateralTiltDeg < -LATERAL_TILT_THRESHOLD_DEG -> {
-                    issues.add("TRONCO INCLINADO PARA DIREITA")
+                    issues.add(PostureIssue.TRUNK_TILT_RIGHT)
                     status = PostureStatus.WARNING
                 }
             }
@@ -93,10 +93,41 @@ object PostureValidator {
     }
 }
 
+/**
+ * Desvios posturais que o validador reconhece.
+ *
+ * O nome da constante é o identificador gravado no banco — estável mesmo que o
+ * texto exibido mude. O [label] e o [advice] ficam aqui, junto da regra que
+ * detecta o desvio, para que o conselho dado ao praticante não se descole do
+ * critério biomecânico que o originou.
+ */
+enum class PostureIssue(val label: String, val advice: String) {
+    LEFT_SHOULDER_DROP(
+        "Ombro esquerdo caído",
+        "A linha dos ombros pendeu para a esquerda. Procure mantê-la paralela ao chão.",
+    ),
+    RIGHT_SHOULDER_DROP(
+        "Ombro direito caído",
+        "A linha dos ombros pendeu para a direita. Procure mantê-la paralela ao chão.",
+    ),
+    SHOULDERS_FORWARD(
+        "Ombros encurvados",
+        "Os ombros ficaram à frente do quadril. Abra o peito e leve as escápulas para trás.",
+    ),
+    TRUNK_TILT_LEFT(
+        "Tronco inclinado para a esquerda",
+        "O tronco saiu do eixo vertical. Distribua o peso e mantenha o quadril sob os ombros.",
+    ),
+    TRUNK_TILT_RIGHT(
+        "Tronco inclinado para a direita",
+        "O tronco saiu do eixo vertical. Distribua o peso e mantenha o quadril sob os ombros.",
+    ),
+}
+
 enum class PostureStatus { OK, WARNING, ERROR }
 
 sealed class PostureResult {
     object Good    : PostureResult()
     object Unknown : PostureResult()
-    data class Bad(val issues: List<String>, val status: PostureStatus) : PostureResult()
+    data class Bad(val issues: List<PostureIssue>, val status: PostureStatus) : PostureResult()
 }

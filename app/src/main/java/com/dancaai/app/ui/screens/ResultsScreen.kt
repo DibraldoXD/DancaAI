@@ -16,24 +16,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
+import androidx.compose.material.icons.rounded.Balance
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.automirrored.rounded.DirectionsRun
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Straighten
-import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,135 +33,293 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dancaai.app.data.MockRepository
-import com.dancaai.app.data.model.Improvement
-import com.dancaai.app.ui.components.CircleScore
+import com.dancaai.app.data.model.SessionOutcome
 import com.dancaai.app.ui.components.DcaCard
 import com.dancaai.app.ui.components.DcaFilledButton
-import com.dancaai.app.ui.components.DcaIconButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.DcaTopBar
 import com.dancaai.app.ui.components.SectionLabel
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
-import com.dancaai.app.ui.theme.scoreColor
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
+/**
+ * Resultado da sessão, com um cartão por módulo de análise.
+ *
+ * Os cartões exibem as medições brutas — proporção de tempo, de acertos e desvio
+ * médio —, não uma pontuação de 0 a 100. A fórmula de score será definida após a
+ * calibração com praticantes, e converter as medições agora daria ao número uma
+ * autoridade que ele ainda não tem.
+ */
 @Composable
-fun ResultsScreen(onAgain: () -> Unit, onHome: () -> Unit, modifier: Modifier = Modifier) {
+fun ResultsScreen(
+    outcome: SessionOutcome?,
+    onAgain: () -> Unit,
+    onHome: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = DcaTheme.colors
-    val r = MockRepository.lastResult
-    var play by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { play = true }
-    val animScore by animateIntAsState(
-        targetValue = if (play) r.total else 0,
-        animationSpec = tween(1000),
-        label = "totalScore",
-    )
 
     Column(modifier = modifier.fillMaxSize().background(colors.bg)) {
         DcaTopBar(
             title = "Resultado da sessão",
             navigationIcon = Icons.Rounded.Close,
             onNavigationClick = onHome,
-            actions = { DcaIconButton(Icons.Rounded.IosShare, "Compartilhar", onClick = {}) },
         )
 
-        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-            // score circular
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp)) {
-                CircleScore(value = r.total) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("$animScore", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold, fontSize = 64.sp, color = scoreColor(r.total))
-                        Text("SCORE GERAL", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVar)
-                    }
-                }
-                Text(r.summary, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVar, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+        ) {
+            when (outcome) {
+                null -> LoadingNotice()
+                else -> OutcomeContent(outcome)
             }
-
-            // breakdown
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BreakdownCard(Icons.Rounded.AccessibilityNew, "Biomecânica", r.posture, r.postureDelta, r.posturePrev, Modifier.weight(1f))
-                BreakdownCard(Icons.Rounded.GraphicEq, "Ritmo", r.rhythm, r.rhythmDelta, r.rhythmPrev, Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(20.dp))
-            SectionLabel("Evolução durante a sessão")
-            Spacer(Modifier.height(10.dp))
-            DcaCard(padding = 16) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    listOf("0:00", "2:30", "5:00").forEach {
-                        Text(it, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceDim)
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                com.dancaai.app.ui.components.LineAreaChart(
-                    data = r.series, minValue = 30, maxValue = 100, gridLines = listOf(50, 75),
-                    modifier = Modifier.height(80.dp),
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-            HighlightBox(r.highlightTitle, r.highlightBody)
-
-            Spacer(Modifier.height(20.dp))
-            SectionLabel("Pontos a melhorar")
-            val icons = listOf(Icons.Rounded.Straighten, Icons.Rounded.AccessibilityNew, Icons.Rounded.Schedule)
-            r.improvements.forEachIndexed { i, imp ->
-                ImprovementRow(icons[i % icons.size], imp)
-            }
-            Spacer(Modifier.height(24.dp))
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().background(colors.bg).padding(horizontal = 24.dp, vertical = 12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colors.bg)
+                .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             DcaOutlinedButton("Início", onClick = onHome, modifier = Modifier.weight(1f))
-            DcaFilledButton("Treinar novamente", onClick = onAgain, leadingIcon = Icons.Rounded.Refresh, modifier = Modifier.weight(2f), height = 48)
+            DcaFilledButton(
+                "Treinar novamente",
+                onClick = onAgain,
+                leadingIcon = Icons.Rounded.Refresh,
+                modifier = Modifier.weight(2f),
+                height = 48,
+            )
         }
     }
 }
 
 @Composable
-private fun BreakdownCard(icon: ImageVector, label: String, value: Int, delta: Int, prev: Int, modifier: Modifier = Modifier) {
+private fun LoadingNotice() {
+    Text(
+        "Salvando a sessão…",
+        style = MaterialTheme.typography.bodyMedium,
+        color = DcaTheme.colors.onSurfaceDim,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+    )
+}
+
+@Composable
+private fun OutcomeContent(outcome: SessionOutcome) {
     val colors = DcaTheme.colors
-    val up = delta >= 0
-    DcaCard(padding = 14, modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(icon, contentDescription = null, tint = colors.onSurfaceVar, modifier = Modifier.size(18.dp))
-            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVar)
+    val session = outcome.session
+    val metrics = session.metrics
+    val previous = outcome.previous?.metrics
+
+    Spacer(Modifier.height(12.dp))
+    SessionHeader(outcome)
+
+    Spacer(Modifier.height(24.dp))
+    SectionLabel("Medições por módulo")
+    Spacer(Modifier.height(10.dp))
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ModuleCard(
+            icon = Icons.Rounded.AccessibilityNew,
+            label = "Postura",
+            value = metrics.goodPostureRatio.asPercent(),
+            detail = if (metrics.poseFrames > 0) "do tempo conforme" else "sem pose detectada",
+            deltaPp = pointsDelta(metrics.goodPostureRatio, previous?.goodPostureRatio),
+            modifier = Modifier.weight(1f),
+        )
+        ModuleCard(
+            icon = Icons.Rounded.Balance,
+            label = "Peso",
+            value = metrics.correctTransitionRatio.asPercent(),
+            detail = if (metrics.totalTransitions > 0) {
+                "${metrics.correctTransitions} de ${metrics.totalTransitions} trocas"
+            } else {
+                "sem trocas de apoio"
+            },
+            deltaPp = pointsDelta(metrics.correctTransitionRatio, previous?.correctTransitionRatio),
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    Spacer(Modifier.height(10.dp))
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ModuleCard(
+            icon = Icons.Rounded.GraphicEq,
+            label = "Ritmo",
+            value = metrics.rhythm.onTimeRatio.asPercent(),
+            detail = metrics.rhythm.meanAbsOffsetMs?.let { "desvio médio ${it.roundToInt()} ms" }
+                ?: "metrônomo desligado",
+            deltaPp = pointsDelta(metrics.rhythm.onTimeRatio, previous?.rhythm?.onTimeRatio),
+            modifier = Modifier.weight(1f),
+        )
+        ModuleCard(
+            icon = Icons.AutoMirrored.Rounded.DirectionsRun,
+            label = "Movimentos",
+            value = "—",
+            detail = "módulo em desenvolvimento",
+            deltaPp = null,
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    if (metrics.isEmpty) {
+        Spacer(Modifier.height(16.dp))
+        EmptyMetricsNotice()
+    }
+
+    val issues = metrics.topPostureIssues
+    if (issues.isNotEmpty()) {
+        Spacer(Modifier.height(24.dp))
+        SectionLabel("Pontos a melhorar")
+        Spacer(Modifier.height(4.dp))
+        issues.take(MAX_ISSUES_SHOWN).forEach { (issue, count) ->
+            ImprovementRow(
+                title = issue.label,
+                description = issue.advice,
+                share = count / metrics.poseFrames.toFloat(),
+            )
         }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-            Text("$value", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold, fontSize = 36.sp, color = scoreColor(value))
-            Text("${if (up) "↑" else "↓"} ${kotlin.math.abs(delta)}%", style = MaterialTheme.typography.bodySmall, color = if (up) colors.good else colors.bad, fontWeight = FontWeight.SemiBold)
+    }
+
+    Spacer(Modifier.height(20.dp))
+    Text(
+        "As medições ainda não viram nota. Os limiares de pontuação serão definidos " +
+            "após a calibração com praticantes de forró.",
+        style = MaterialTheme.typography.bodySmall,
+        color = colors.onSurfaceDim,
+    )
+    Spacer(Modifier.height(24.dp))
+}
+
+@Composable
+private fun SessionHeader(outcome: SessionOutcome) {
+    val colors = DcaTheme.colors
+    val session = outcome.session
+    DcaCard(padding = 16) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            EmojiTile(session.emoji, 48)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${session.styleName} · ${session.durationMin} min",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.onSurface,
+                )
+                Text(
+                    session.date,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVar,
+                )
+            }
         }
-        Text("vs. $prev anterior", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceDim, modifier = Modifier.padding(top = 2.dp))
+        if (outcome.previous == null) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Primeira sessão registrada — a partir da próxima, a comparação aparece aqui.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceDim,
+            )
+        }
     }
 }
 
 @Composable
-private fun HighlightBox(title: String, body: String) {
+private fun ModuleCard(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    detail: String,
+    deltaPp: Int?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = DcaTheme.colors
+    DcaCard(padding = 14, modifier = modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = colors.onSurfaceVar, modifier = Modifier.size(18.dp))
+            Text(
+                label.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.onSurfaceVar,
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            Text(
+                value,
+                fontFamily = MonoFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 30.sp,
+                // A cor não julga o valor absoluto: sem fórmula de score não há
+                // limiar defensável para chamar 70% de bom ou ruim.
+                color = colors.onSurface,
+            )
+            deltaPp?.let { delta ->
+                Text(
+                    "${if (delta >= 0) "↑" else "↓"} ${abs(delta)} pp",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (delta >= 0) colors.good else colors.bad,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+        }
+        Text(
+            detail,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurfaceDim,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun EmptyMetricsNotice() {
     val colors = DcaTheme.colors
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(Shapes.md)
-            .background(colors.goodDim)
-            .border(1.dp, colors.good.copy(alpha = 0.25f), Shapes.md)
+            .background(colors.surface2)
+            .border(1.dp, colors.outline, Shapes.md)
             .padding(14.dp),
     ) {
-        Icon(Icons.Rounded.TrendingUp, contentDescription = null, tint = colors.good, modifier = Modifier.size(24.dp))
         Column {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = colors.good)
-            Text(body, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVar, modifier = Modifier.padding(top = 2.dp))
+            Text(
+                "Nenhuma medição registrada",
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onSurface,
+            )
+            Text(
+                "A câmera não reconheceu uma pose durante a sessão. Confira o enquadramento " +
+                    "— o corpo inteiro precisa aparecer — ou use um aparelho físico, já que o " +
+                    "emulador não roda a detecção de pose.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVar,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun ImprovementRow(icon: ImageVector, imp: Improvement) {
+private fun ImprovementRow(title: String, description: String, share: Float) {
     val colors = DcaTheme.colors
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -178,13 +327,39 @@ private fun ImprovementRow(icon: ImageVector, imp: Improvement) {
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(36.dp).clip(Shapes.sm).background(colors.surface2),
+            modifier = Modifier.size(44.dp).clip(Shapes.sm).background(colors.surface2),
         ) {
-            Icon(icon, contentDescription = null, tint = colors.onSurface, modifier = Modifier.size(20.dp))
+            Text(
+                share.asPercent(),
+                fontFamily = MonoFontFamily,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
+            )
         }
         Column {
-            Text(imp.title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
-            Text(imp.description, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVar, modifier = Modifier.padding(top = 2.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVar,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
     }
 }
+
+private const val MAX_ISSUES_SHOWN = 3
+
+
+private fun Float?.asPercent(): String =
+    this?.let { "${(it * 100).roundToInt()}%" } ?: "—"
+
+/**
+ * Diferença entre duas proporções, em pontos percentuais. Comparar proporções em
+ * variação relativa exageraria a mudança quando a base é pequena.
+ */
+private fun pointsDelta(current: Float?, previous: Float?): Int? =
+    if (current == null || previous == null) null
+    else ((current - previous) * 100).roundToInt().takeIf { it != 0 }
+

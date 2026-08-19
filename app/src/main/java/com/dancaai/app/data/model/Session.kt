@@ -34,6 +34,15 @@ data class Session(
     val metrics: SessionMetrics,
 )
 
+/**
+ * A sessão recém-encerrada junto da anterior, que serve de base de comparação na
+ * tela de Resultado. [previous] é nula na primeira sessão do usuário.
+ */
+data class SessionOutcome(
+    val session: Session,
+    val previous: Session?,
+)
+
 /** Resumo do histórico dos últimos 30 dias (cabeçalho da tela de Histórico). */
 data class HistorySummary(
     val average: Int?,
@@ -43,24 +52,3 @@ data class HistorySummary(
     val bars: List<Int>,
 )
 
-/** Ponto a melhorar exibido na tela de Resultado. */
-data class Improvement(
-    val title: String,
-    val description: String,
-)
-
-/** Resultado detalhado de uma sessão (tela de Resultado). */
-data class SessionResult(
-    val total: Int,
-    val posture: Int,
-    val rhythm: Int,
-    val postureDelta: Int,
-    val rhythmDelta: Int,
-    val posturePrev: Int,
-    val rhythmPrev: Int,
-    val series: List<Int>,
-    val summary: String,
-    val highlightTitle: String,
-    val highlightBody: String,
-    val improvements: List<Improvement>,
-)

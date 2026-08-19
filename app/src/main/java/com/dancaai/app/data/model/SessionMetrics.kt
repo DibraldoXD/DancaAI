@@ -1,5 +1,7 @@
 package com.dancaai.app.data.model
 
+import com.dancaai.app.PostureIssue
+
 /**
  * Medições brutas coletadas durante uma sessão de treino.
  *
@@ -12,8 +14,8 @@ data class SessionMetrics(
     /** Frames em que o MediaPipe entregou pose suficiente para avaliar a postura. */
     val poseFrames: Int = 0,
     val goodPostureFrames: Int = 0,
-    /** Quantas vezes cada desvio postural foi detectado, por rótulo do PostureValidator. */
-    val postureIssueCounts: Map<String, Int> = emptyMap(),
+    /** Quantas vezes cada desvio postural foi detectado. */
+    val postureIssueCounts: Map<PostureIssue, Int> = emptyMap(),
     val correctTransitions: Int = 0,
     val errorTransitions: Int = 0,
     val rhythm: RhythmMetrics = RhythmMetrics(),
@@ -29,7 +31,7 @@ data class SessionMetrics(
         get() = if (totalTransitions > 0) correctTransitions / totalTransitions.toFloat() else null
 
     /** Desvios do mais frequente ao menos frequente — base dos "pontos a melhorar". */
-    val topPostureIssues: List<Pair<String, Int>>
+    val topPostureIssues: List<Pair<PostureIssue, Int>>
         get() = postureIssueCounts.entries
             .sortedByDescending { it.value }
             .map { it.key to it.value }

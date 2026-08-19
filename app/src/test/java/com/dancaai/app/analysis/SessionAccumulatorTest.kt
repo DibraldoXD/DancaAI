@@ -1,6 +1,7 @@
 package com.dancaai.app.analysis
 
 import com.dancaai.app.MovementDirection
+import com.dancaai.app.PostureIssue
 import com.dancaai.app.PostureResult
 import com.dancaai.app.PostureStatus
 import com.dancaai.app.WeightInfo
@@ -39,7 +40,7 @@ class SessionAccumulatorTest {
     @Test
     fun `razao de postura mistura frames bons e ruins`() {
         repeat(3) { accumulator.onPosture(PostureResult.Good) }
-        accumulator.onPosture(bad("OMBROS ENCURVADOS"))
+        accumulator.onPosture(bad(PostureIssue.SHOULDERS_FORWARD))
 
         val metrics = accumulator.snapshot()
 
@@ -49,15 +50,18 @@ class SessionAccumulatorTest {
 
     @Test
     fun `cada desvio do frame e contado separadamente`() {
-        accumulator.onPosture(bad("OMBROS ENCURVADOS", "OMBRO ESQUERDO CAIDO"))
-        accumulator.onPosture(bad("OMBROS ENCURVADOS"))
+        accumulator.onPosture(bad(PostureIssue.SHOULDERS_FORWARD, PostureIssue.LEFT_SHOULDER_DROP))
+        accumulator.onPosture(bad(PostureIssue.SHOULDERS_FORWARD))
 
         val metrics = accumulator.snapshot()
 
         // um frame com dois desvios continua sendo um frame
         assertEquals(2, metrics.poseFrames)
-        assertEquals(mapOf("OMBROS ENCURVADOS" to 2, "OMBRO ESQUERDO CAIDO" to 1), metrics.postureIssueCounts)
-        assertEquals("OMBROS ENCURVADOS" to 2, metrics.topPostureIssues.first())
+        assertEquals(
+            mapOf(PostureIssue.SHOULDERS_FORWARD to 2, PostureIssue.LEFT_SHOULDER_DROP to 1),
+            metrics.postureIssueCounts,
+        )
+        assertEquals(PostureIssue.SHOULDERS_FORWARD to 2, metrics.topPostureIssues.first())
     }
 
     @Test
@@ -78,13 +82,13 @@ class SessionAccumulatorTest {
     @Test
     fun `reset zera todas as contagens`() {
         accumulator.onPosture(PostureResult.Good)
-        accumulator.onPosture(bad("OMBROS ENCURVADOS"))
+        accumulator.onPosture(bad(PostureIssue.SHOULDERS_FORWARD))
         accumulator.onWeight(weight(correct = 3, error = 1))
 
         accumulator.reset()
 
         assertTrue(accumulator.snapshot().isEmpty)
-        assertEquals(emptyMap<String, Int>(), accumulator.snapshot().postureIssueCounts)
+        assertEquals(emptyMap<PostureIssue, Int>(), accumulator.snapshot().postureIssueCounts)
     }
 
     @Test
@@ -92,13 +96,13 @@ class SessionAccumulatorTest {
         accumulator.onPosture(PostureResult.Good)
         val taken = accumulator.snapshot()
 
-        accumulator.onPosture(bad("OMBROS ENCURVADOS"))
+        accumulator.onPosture(bad(PostureIssue.SHOULDERS_FORWARD))
 
         assertEquals(1, taken.poseFrames)
-        assertEquals(emptyMap<String, Int>(), taken.postureIssueCounts)
+        assertEquals(emptyMap<PostureIssue, Int>(), taken.postureIssueCounts)
     }
 
-    private fun bad(vararg issues: String) =
+    private fun bad(vararg issues: PostureIssue) =
         PostureResult.Bad(issues.toList(), PostureStatus.WARNING)
 
     private fun weight(correct: Int, error: Int) = WeightInfo(

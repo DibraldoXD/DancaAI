@@ -10,6 +10,7 @@ import com.dancaai.app.audio.MetronomeBpmStore
 import com.dancaai.app.data.SessionRepository
 import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.data.model.SessionMetrics
+import com.dancaai.app.data.model.SessionOutcome
 import kotlinx.coroutines.launch
 
 /**
@@ -29,8 +30,8 @@ class SessionFlowViewModel(application: Application) : AndroidViewModel(applicat
     var config by mutableStateOf(SessionConfig(bpm = bpmStore.load()))
         private set
 
-    /** Id da sessão gravada ao encerrar o treino. Alimenta a tela de Resultado. */
-    var savedSessionId by mutableStateOf<Long?>(null)
+    /** Sessão gravada ao encerrar o treino, com a anterior; nula até a gravação concluir. */
+    var outcome by mutableStateOf<SessionOutcome?>(null)
         private set
 
     private var startedAtEpochMs = 0L
@@ -42,7 +43,7 @@ class SessionFlowViewModel(application: Application) : AndroidViewModel(applicat
 
     fun startSession() {
         startedAtEpochMs = System.currentTimeMillis()
-        savedSessionId = null
+        outcome = null
     }
 
     /**
@@ -52,12 +53,13 @@ class SessionFlowViewModel(application: Application) : AndroidViewModel(applicat
     fun finishSession(elapsedSec: Int, metrics: SessionMetrics = SessionMetrics()) {
         val startedAt = startedAtEpochMs.takeIf { it > 0L } ?: System.currentTimeMillis()
         viewModelScope.launch {
-            savedSessionId = repository.saveSession(
+            val id = repository.saveSession(
                 config = config,
                 startedAtEpochMs = startedAt,
                 actualDurationSec = elapsedSec,
                 metrics = metrics,
             )
+            outcome = repository.findOutcome(id)
         }
     }
 }

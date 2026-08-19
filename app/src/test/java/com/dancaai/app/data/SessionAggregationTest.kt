@@ -1,5 +1,6 @@
 package com.dancaai.app.data
 
+import com.dancaai.app.PostureIssue
 import com.dancaai.app.data.local.SessionEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -66,8 +67,8 @@ class SessionAggregationTest {
     @Test
     fun `contagens de desvio sobrevivem ao round-trip`() {
         val counts = mapOf(
-            "OMBROS ENCURVADOS" to 120,
-            "TRONCO INCLINADO PARA DIREITA" to 45,
+            PostureIssue.SHOULDERS_FORWARD to 120,
+            PostureIssue.TRUNK_TILT_RIGHT to 45,
         )
 
         assertEquals(counts, decodeIssueCounts(encodeIssueCounts(counts)))
@@ -76,14 +77,24 @@ class SessionAggregationTest {
     @Test
     fun `mapa vazio nao gera coluna`() {
         assertNull(encodeIssueCounts(emptyMap()))
-        assertEquals(emptyMap<String, Int>(), decodeIssueCounts(null))
+        assertEquals(emptyMap<PostureIssue, Int>(), decodeIssueCounts(null))
     }
 
     @Test
-    fun `entradas malformadas sao descartadas sem quebrar a leitura`() {
+    fun `desvio desconhecido e descartado sem quebrar a leitura`() {
+        // uma constante removida do enum não pode derrubar a leitura do histórico
         assertEquals(
-            mapOf("OMBROS ENCURVADOS" to 12),
-            decodeIssueCounts("OMBROS ENCURVADOS:12;lixo;OUTRO:nao-numero"),
+            mapOf(PostureIssue.SHOULDERS_FORWARD to 12),
+            decodeIssueCounts("SHOULDERS_FORWARD:12;DESVIO_REMOVIDO:9;lixo;TRUNK_TILT_LEFT:x"),
+        )
+    }
+
+    @Test
+    fun `serializacao usa o nome da constante e nao o texto exibido`() {
+        // o rótulo pode ser reescrito sem invalidar sessões já gravadas
+        assertEquals(
+            "SHOULDERS_FORWARD:7",
+            encodeIssueCounts(mapOf(PostureIssue.SHOULDERS_FORWARD to 7)),
         )
     }
 

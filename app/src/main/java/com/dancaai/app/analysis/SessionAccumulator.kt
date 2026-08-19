@@ -1,5 +1,6 @@
 package com.dancaai.app.analysis
 
+import com.dancaai.app.PostureIssue
 import com.dancaai.app.PostureResult
 import com.dancaai.app.WeightInfo
 import com.dancaai.app.data.model.RhythmJudgement
@@ -18,7 +19,7 @@ class SessionAccumulator(
 ) {
     private var poseFrames = 0
     private var goodPostureFrames = 0
-    private val postureIssueCounts = mutableMapOf<String, Int>()
+    private val postureIssueCounts = mutableMapOf<PostureIssue, Int>()
 
     // O StepCounter mantém os contadores acumulados da sessão e reemite os totais
     // a cada frame — aqui o valor é substituído, nunca somado, senão contaria

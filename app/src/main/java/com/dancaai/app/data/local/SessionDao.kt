@@ -12,6 +12,13 @@ interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY startedAtEpochMs DESC")
     fun observeAll(): Flow<List<SessionEntity>>
 
+    /** Sessão imediatamente anterior à data dada, base da comparação na tela de Resultado. */
+    @Query(
+        "SELECT * FROM sessions WHERE startedAtEpochMs < :beforeEpochMs " +
+            "ORDER BY startedAtEpochMs DESC LIMIT 1"
+    )
+    suspend fun findPrevious(beforeEpochMs: Long): SessionEntity?
+
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun findById(id: Long): SessionEntity?
 

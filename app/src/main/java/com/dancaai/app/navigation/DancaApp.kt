@@ -160,8 +160,10 @@ private fun NavGraphBuilder.sessionFlow(navController: NavHostController) {
             )
         }
 
-        composable(Routes.RESULTS) {
+        composable(Routes.RESULTS) { entry ->
+            val viewModel = entry.sessionFlowViewModel(navController)
             ResultsScreen(
+                outcome = viewModel.outcome,
                 onAgain = {
                     navController.navigate(Routes.SESSION) {
                         popUpTo(Routes.SESSION_FLOW) { inclusive = true }

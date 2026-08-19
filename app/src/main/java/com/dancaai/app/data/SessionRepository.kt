@@ -1,6 +1,7 @@
 package com.dancaai.app.data
 
 import android.content.Context
+import com.dancaai.app.PostureIssue
 import com.dancaai.app.data.local.DancaDatabase
 import com.dancaai.app.data.local.SessionEntity
 import com.dancaai.app.data.local.UserPreferences
@@ -12,6 +13,7 @@ import com.dancaai.app.data.model.RhythmMetrics
 import com.dancaai.app.data.model.Session
 import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.data.model.SessionMetrics
+import com.dancaai.app.data.model.SessionOutcome
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -73,6 +75,15 @@ class SessionRepository(context: Context) {
 
     suspend fun findSession(id: Long): Session? = dao.findById(id)?.toSession()
 
+    /** A sessão com a anterior ao lado, para a tela de Resultado comparar as medições. */
+    suspend fun findOutcome(id: Long): SessionOutcome? {
+        val entity = dao.findById(id) ?: return null
+        return SessionOutcome(
+            session = entity.toSession(),
+            previous = dao.findPrevious(entity.startedAtEpochMs)?.toSession(),
+        )
+    }
+
     suspend fun clearHistory() = dao.deleteAll()
 
     suspend fun completeOnboarding(name: String, levelId: String) =
@@ -131,23 +142,29 @@ private fun SessionEntity.toSession(): Session {
 }
 
 /**
- * Serializa as contagens de desvio como `ROTULO:n;ROTULO:n`. Os rótulos vêm do
- * PostureValidator e não contêm `:` nem `;`, então não há o que escapar.
+ * Serializa as contagens de desvio como `NOME:n;NOME:n`, usando o nome da
+ * constante do enum — identificador estável, ao contrário do texto exibido, que
+ * pode ser reescrito sem invalidar as sessões já gravadas.
  */
-internal fun encodeIssueCounts(counts: Map<String, Int>): String? =
+internal fun encodeIssueCounts(counts: Map<PostureIssue, Int>): String? =
     counts.takeIf { it.isNotEmpty() }
         ?.entries
-        ?.joinToString(";") { "${it.key}:${it.value}" }
+        ?.joinToString(";") { "${it.key.name}:${it.value}" }
 
-internal fun decodeIssueCounts(csv: String?): Map<String, Int> =
+internal fun decodeIssueCounts(csv: String?): Map<PostureIssue, Int> =
     csv?.split(';')
         ?.mapNotNull { entry ->
-            val label = entry.substringBeforeLast(':', "")
+            val name = entry.substringBeforeLast(':', "")
             val count = entry.substringAfterLast(':', "").toIntOrNull()
-            if (label.isEmpty() || count == null) null else label to count
+            // um desvio removido do enum some do histórico em vez de derrubar a leitura
+            val issue = POSTURE_ISSUES_BY_NAME[name]
+            if (issue == null || count == null) null else issue to count
         }
         ?.toMap()
         .orEmpty()
+
+private val POSTURE_ISSUES_BY_NAME: Map<String, PostureIssue> =
+    PostureIssue.entries.associateBy { it.name }
 
 private fun List<SessionEntity>.averageScore(): Int? =
     mapNotNull { it.moduleScores().total }
