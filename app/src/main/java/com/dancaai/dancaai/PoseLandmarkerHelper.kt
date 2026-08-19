@@ -84,7 +84,8 @@ class PoseLandmarkerHelper(
             ResultBundle(
                 results = result,
                 inputImageWidth = input.width,
-                inputImageHeight = input.height
+                inputImageHeight = input.height,
+                frameTimeMs = result.timestampMs(),
             )
         )
     }
@@ -99,7 +100,9 @@ class PoseLandmarkerHelper(
     data class ResultBundle(
         val results: PoseLandmarkerResult,
         val inputImageWidth: Int,
-        val inputImageHeight: Int
+        val inputImageHeight: Int,
+        /** Instante de captura do frame, na base de SystemClock.uptimeMillis (ver detectLiveStream). */
+        val frameTimeMs: Long,
     )
 
     interface LandmarkerListener {

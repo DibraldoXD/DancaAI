@@ -45,9 +45,9 @@ class MainActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListene
                 binding.tvMessage.text = "3 REPS CONCLUÍDAS!"
             }
         }
-        stepCounter.onWeightInfoChanged = { info ->
-            binding.overlayView.updateWeightInfo(info)
-        }
+        // O painel de transferência de peso saiu da OverlayView e virou HUD em
+        // Compose, que só existe na tela de Treino — esta activity de protótipo
+        // ficou sem esse feedback.
 
         binding.fabSwitchCamera.setOnClickListener {
             isFrontCamera = !isFrontCamera
