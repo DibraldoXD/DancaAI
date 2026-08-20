@@ -9,120 +9,119 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SwapHoriz
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dancaai.app.data.MockRepository
-import com.dancaai.app.data.model.DanceStyle
+import com.dancaai.app.audio.BeatPattern
+import com.dancaai.app.audio.Metronome
+import com.dancaai.app.data.DanceCatalog
+import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.ui.components.DcaCard
 import com.dancaai.app.ui.components.DcaFilledButton
-import com.dancaai.app.ui.components.DcaIconButton
 import com.dancaai.app.ui.components.DcaTopBar
 import com.dancaai.app.ui.components.SectionLabel
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
+import kotlin.math.roundToInt
 
-private val MagentaDark = Color(0xFF7B0F4A)
-
+/**
+ * Configuração da sessão. O que é escolhido aqui vira o [SessionConfig] que a
+ * tela de Treino consome — duração do cronômetro e BPM inicial do metrônomo.
+ */
 @Composable
-fun SessionScreen(onBack: () -> Unit, onStart: () -> Unit, modifier: Modifier = Modifier) {
+fun SessionScreen(
+    config: SessionConfig,
+    onConfigChange: ((SessionConfig) -> SessionConfig) -> Unit,
+    onBack: () -> Unit,
+    onStart: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = DcaTheme.colors
-    val music = MockRepository.defaultMusic
-    var styleId by remember { mutableStateOf("forro") }
-    var duration by remember { mutableIntStateOf(5) }
+    val style = DanceCatalog.styleById(config.styleId)
 
     Column(modifier = modifier.fillMaxSize().background(colors.bg)) {
-        DcaTopBar(title = "Nova sessão", navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack, onNavigationClick = onBack)
+        DcaTopBar(
+            title = "Nova sessão",
+            navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
+            onNavigationClick = onBack,
+        )
 
         Column(
-            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.height(8.dp))
             SectionLabel("Estilo de dança")
             Spacer(Modifier.height(10.dp))
-            val styles = MockRepository.styles
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                styles.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { s ->
-                            StyleCard(s, selected = styleId == s.id, onClick = { styleId = s.id }, modifier = Modifier.weight(1f))
-                        }
+            DcaCard(padding = 16) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    EmojiTile(style.emoji, 48)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            style.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.onSurface,
+                        )
+                        Text(
+                            "${style.bpmRange} BPM",
+                            fontFamily = MonoFontFamily,
+                            fontSize = 11.sp,
+                            color = colors.onSurfaceDim,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
                     }
                 }
             }
 
             Spacer(Modifier.height(24.dp))
-            SectionLabel("Música")
+            SectionLabel("Metrônomo")
             Spacer(Modifier.height(10.dp))
-            DcaCard(padding = 14) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(56.dp).clip(Shapes.md)
-                            .background(Brush.linearGradient(listOf(colors.accent, MagentaDark))),
-                    ) {
-                        Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(music.title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1)
-                        Text("${music.artist} · ${music.duration}", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVar)
-                    }
-                    DcaIconButton(Icons.Rounded.SwapHoriz, "Trocar música", onClick = {})
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DcaCard(padding = 14, modifier = Modifier.weight(1f)) {
-                    Text("BPM DETECTADO", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceDim)
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                        Text("${music.bpm}", fontFamily = MonoFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, color = colors.accent)
-                        Text("· ideal p/ Forró", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVar)
-                    }
-                }
-                DcaCard(padding = 14, modifier = Modifier.width(110.dp)) {
-                    Text("TOM", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceDim)
-                    Text(music.key, fontFamily = MonoFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, color = colors.onSurface, modifier = Modifier.padding(top = 4.dp))
-                }
-            }
+            BpmCard(
+                bpm = config.bpm,
+                bpmRange = style.bpmRange,
+                onBpmChange = { bpm -> onConfigChange { it.copy(bpm = bpm) } },
+                pattern = config.beatPattern,
+                onPatternChange = { pattern -> onConfigChange { it.copy(beatPattern = pattern) } },
+            )
 
             Spacer(Modifier.height(24.dp))
             SectionLabel("Duração")
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(3, 5, 10).forEach { m ->
-                    DurationCard(m, selected = duration == m, onClick = { duration = m }, modifier = Modifier.weight(1f))
+                SessionConfig.DURATION_OPTIONS.forEach { minutes ->
+                    DurationCard(
+                        minutes = minutes,
+                        selected = config.durationMin == minutes,
+                        onClick = { onConfigChange { it.copy(durationMin = minutes) } },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
 
@@ -132,46 +131,134 @@ fun SessionScreen(onBack: () -> Unit, onStart: () -> Unit, modifier: Modifier = 
             DcaCard(padding = 16) {
                 CameraDiagram()
                 Text(
-                    "Apoie o celular em pé num suporte, a ~2 m de distância. Sua figura inteira deve aparecer no enquadramento.",
-                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVar,
+                    "Apoie o celular em pé num suporte, a ~2 m de distância. " +
+                        "Sua figura inteira deve aparecer no enquadramento.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVar,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             }
             Spacer(Modifier.height(24.dp))
         }
 
-        Box(
-            modifier = Modifier.fillMaxWidth().background(colors.bg)
-                .border(0.dp, Color.Transparent).padding(24.dp),
-        ) {
-            DcaFilledButton("Começar", onClick = onStart, leadingIcon = Icons.Rounded.PlayArrow, modifier = Modifier.fillMaxWidth())
+        Box(modifier = Modifier.fillMaxWidth().background(colors.bg).padding(24.dp)) {
+            DcaFilledButton(
+                "Começar",
+                onClick = onStart,
+                leadingIcon = Icons.Rounded.PlayArrow,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
 
+/** Escolha do BPM e do tipo de batida — os dois parâmetros do módulo de ritmo. */
 @Composable
-private fun StyleCard(style: DanceStyle, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun BpmCard(
+    bpm: Int,
+    bpmRange: String,
+    onBpmChange: (Int) -> Unit,
+    pattern: BeatPattern,
+    onPatternChange: (BeatPattern) -> Unit,
+) {
     val colors = DcaTheme.colors
-    Column(
-        verticalArrangement = Arrangement.SpaceBetween,
+    DcaCard(padding = 16) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "$bpm",
+                fontFamily = MonoFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 30.sp,
+                color = colors.accent,
+            )
+            Text(
+                "BPM",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.onSurfaceVar,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Forró: $bpmRange",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.onSurfaceDim,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+        }
+        Slider(
+            value = bpm.toFloat(),
+            onValueChange = { onBpmChange(it.roundToInt()) },
+            valueRange = Metronome.MIN_BPM.toFloat()..Metronome.MAX_BPM.toFloat(),
+            colors = SliderDefaults.colors(
+                thumbColor = colors.accent,
+                activeTrackColor = colors.accent,
+                inactiveTrackColor = colors.surface2,
+            ),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "TIPO DE BATIDA",
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurfaceDim,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BeatPattern.entries.forEach { option ->
+                PatternCard(
+                    pattern = option,
+                    selected = pattern == option,
+                    onClick = { onPatternChange(option) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            when (pattern) {
+                BeatPattern.THREE_AND_PAUSE ->
+                    "O 4º tique soa diferente, marcando a quebra do forró."
+                BeatPattern.FOUR_EVEN ->
+                    "Quatro tempos sem quebra; o 1º tique marca o início do compasso."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVar,
+        )
+    }
+}
+
+@Composable
+private fun PatternCard(
+    pattern: BeatPattern,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = DcaTheme.colors
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
-            .aspectRatio(1.4f)
+            .height(44.dp)
             .clip(Shapes.md)
             .background(if (selected) colors.accentSoft else colors.surface1)
             .border(1.5.dp, if (selected) colors.accent else colors.outlineSoft, Shapes.md)
-            .clickable(onClick = onClick)
-            .padding(14.dp),
+            .clickable(onClick = onClick),
     ) {
-        Text(style.emoji, fontSize = 28.sp)
-        Column {
-            Text(style.name, style = MaterialTheme.typography.titleMedium, color = if (selected) colors.accent else colors.onSurface)
-            Text("${style.bpmRange} BPM", fontFamily = MonoFontFamily, fontSize = 11.sp, color = colors.onSurfaceDim, modifier = Modifier.padding(top = 2.dp))
-        }
+        Text(
+            pattern.label,
+            fontFamily = MonoFontFamily,
+            fontSize = 13.sp,
+            color = if (selected) colors.accent else colors.onSurface,
+        )
     }
 }
 
 @Composable
-private fun DurationCard(minutes: Int, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun DurationCard(
+    minutes: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = DcaTheme.colors
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -183,8 +270,18 @@ private fun DurationCard(minutes: Int, selected: Boolean, onClick: () -> Unit, m
             .border(1.5.dp, if (selected) colors.accent else colors.outlineSoft, Shapes.md)
             .clickable(onClick = onClick),
     ) {
-        Text("$minutes", fontFamily = MonoFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, color = if (selected) colors.accent else colors.onSurface)
-        Text("min", style = MaterialTheme.typography.labelSmall, color = if (selected) colors.accent else colors.onSurfaceDim)
+        Text(
+            "$minutes",
+            fontFamily = MonoFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
+            color = if (selected) colors.accent else colors.onSurface,
+        )
+        Text(
+            "min",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) colors.accent else colors.onSurfaceDim,
+        )
     }
 }
 

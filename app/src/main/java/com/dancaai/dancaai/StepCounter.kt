@@ -1,5 +1,6 @@
 package com.dancaai.app
 
+import android.os.SystemClock
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import kotlin.math.abs
 
@@ -64,6 +65,12 @@ class StepCounter {
     var onStageChanged: ((stage: String, counter: Int) -> Unit)? = null
     var onWeightInfoChanged: ((info: WeightInfo) -> Unit)? = null
 
+    /**
+     * Toda troca de perna de apoio, correta ou não, com o instante do frame que a
+     * revelou. É a referência do módulo de ritmo para comparar com as batidas.
+     */
+    var onWeightTransition: ((leg: WeightLeg, atUptimeMs: Long) -> Unit)? = null
+
     private val legHistory = ArrayDeque<WeightLeg>()
     private var currentLeg = WeightLeg.NEUTRAL
     private var errorCountdown = 0
@@ -77,7 +84,7 @@ class StepCounter {
     private var prevHipCX: Float? = null
     private var prevHipCY: Float? = null
 
-    fun process(result: PoseLandmarkerResult) {
+    fun process(result: PoseLandmarkerResult, atUptimeMs: Long = SystemClock.uptimeMillis()) {
         if (result.landmarks().isEmpty()) { emitInfo(MovementDirection.NEUTRAL); return }
         val lm = result.landmarks()[0]
 
@@ -154,6 +161,7 @@ class StepCounter {
             }
             if (legHistory.size >= HISTORY_SIZE) legHistory.removeFirst()
             legHistory.addLast(newLeg)
+            onWeightTransition?.invoke(newLeg, atUptimeMs)
         }
 
         currentLeg = newLeg

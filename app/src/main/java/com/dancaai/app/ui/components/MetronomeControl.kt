@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dancaai.app.audio.BeatPattern
 import com.dancaai.app.audio.Metronome
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
@@ -35,7 +36,7 @@ import com.dancaai.app.ui.theme.Shapes
 
 /**
  * Controle do metrônomo pro HUD do treino: stepper de BPM, play/pause manual e
- * indicador visual do compasso (4 tempos, o 4º destacado como pausa/quebra).
+ * indicador visual do compasso, conforme o [BeatPattern] escolhido na sessão.
  * Estado (bpm/playing/tique atual) é hoisted — quem chama é dono do [Metronome].
  */
 @Composable
@@ -43,6 +44,7 @@ fun MetronomeControl(
     bpm: Int,
     playing: Boolean,
     activeBeat: Int,
+    pattern: BeatPattern,
     onBpmChange: (Int) -> Unit,
     onTogglePlay: () -> Unit,
     modifier: Modifier = Modifier,
@@ -56,7 +58,7 @@ fun MetronomeControl(
             .border(1.dp, Color.White.copy(alpha = 0.1f), Shapes.lg)
             .padding(16.dp),
     ) {
-        BeatLabels(activeBeat)
+        BeatLabels(pattern, activeBeat)
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             StepperButton(Icons.Rounded.Remove, "Diminuir BPM") {
@@ -79,23 +81,21 @@ fun MetronomeControl(
     }
 }
 
-/** Rótulos do compasso fixo de 4 tempos do metrônomo — reaproveitado pela captura contínua. */
-internal val beatLabels = listOf("1", "2", "3", "Pausa")
 
 @Composable
-private fun BeatLabels(activeBeat: Int) {
+private fun BeatLabels(pattern: BeatPattern, activeBeat: Int) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        beatLabels.forEachIndexed { i, label ->
-            val isPause = i == 3
+        pattern.beatLabels.forEachIndexed { i, label ->
+            val isDistinct = i == pattern.distinctBeatIndex
             val isActive = i == activeBeat
             Text(
                 label,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                 color = when {
-                    isActive && isPause -> Color(0xFFF59E0B) // laranja: tique de pausa/quebra
+                    isActive && isDistinct -> Color(0xFFF59E0B) // laranja: tique distinto (quebra ou tempo 1)
                     isActive -> DcaTheme.colors.accent
-                    isPause -> Color.White.copy(alpha = 0.45f)
+                    isDistinct -> Color.White.copy(alpha = 0.45f)
                     else -> Color.White.copy(alpha = 0.35f)
                 },
             )

@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +23,8 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,9 +42,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.dancaai.app.data.MockRepository
+import com.dancaai.app.data.DanceCatalog
+import com.dancaai.app.data.local.UserSettings
 import com.dancaai.app.ui.components.BrandMark
-import com.dancaai.app.ui.components.DcaChip
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.DcaTextButton
@@ -54,11 +55,14 @@ import com.dancaai.app.ui.theme.Shapes
 import kotlinx.coroutines.launch
 
 @Composable
-fun OnboardingScreen(onFinish: () -> Unit, modifier: Modifier = Modifier) {
+fun OnboardingScreen(
+    onFinish: (name: String, levelId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val pagerState = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
-    var level by remember { mutableStateOf("intermediario") }
-    var style by remember { mutableStateOf("forro") }
+    var name by remember { mutableStateOf("") }
+    var level by remember { mutableStateOf(UserSettings.DEFAULT_LEVEL_ID) }
 
     fun goTo(page: Int) = scope.launch { pagerState.animateScrollToPage(page) }
 
@@ -67,7 +71,7 @@ fun OnboardingScreen(onFinish: () -> Unit, modifier: Modifier = Modifier) {
             when (page) {
                 0 -> OnboardSlide1()
                 1 -> OnboardSlide2()
-                else -> OnboardSlide3(level, { level = it }, style, { style = it })
+                else -> OnboardSlide3(name, { name = it }, level, { level = it })
             }
         }
 
@@ -79,7 +83,11 @@ fun OnboardingScreen(onFinish: () -> Unit, modifier: Modifier = Modifier) {
             when (pagerState.currentPage) {
                 0 -> {
                     DcaFilledButton("Continuar", onClick = { goTo(1) }, modifier = Modifier.fillMaxWidth())
-                    DcaTextButton("Pular", onClick = onFinish, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    DcaTextButton(
+                        "Pular",
+                        onClick = { onFinish("", UserSettings.DEFAULT_LEVEL_ID) },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
                 }
                 1 -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     DcaOutlinedButton("Voltar", onClick = { goTo(0) }, modifier = Modifier.weight(1f))
@@ -87,7 +95,12 @@ fun OnboardingScreen(onFinish: () -> Unit, modifier: Modifier = Modifier) {
                 }
                 else -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     DcaOutlinedButton("Voltar", onClick = { goTo(1) }, modifier = Modifier.weight(1f))
-                    DcaFilledButton("Começar", onClick = onFinish, modifier = Modifier.weight(2f), height = 48)
+                    DcaFilledButton(
+                        "Começar",
+                        onClick = { onFinish(name, level) },
+                        modifier = Modifier.weight(2f),
+                        height = 48,
+                    )
                 }
             }
         }
@@ -181,41 +194,59 @@ private fun StepConnector() {
     )
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun OnboardSlide3(
+    name: String,
+    onName: (String) -> Unit,
     level: String,
     onLevel: (String) -> Unit,
-    style: String,
-    onStyle: (String) -> Unit,
 ) {
+    val colors = DcaTheme.colors
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(40.dp))
-        Text("Vamos te conhecer", style = MaterialTheme.typography.headlineMedium, color = DcaTheme.colors.onSurface)
+        Text("Vamos te conhecer", style = MaterialTheme.typography.headlineMedium, color = colors.onSurface)
         Text(
             "Personalizamos o feedback ao seu nível.",
             style = MaterialTheme.typography.bodyLarge,
-            color = DcaTheme.colors.onSurfaceVar,
+            color = colors.onSurfaceVar,
             modifier = Modifier.padding(top = 8.dp),
         )
 
         Spacer(Modifier.height(32.dp))
+        SectionLabel("Como podemos te chamar?")
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = name,
+            onValueChange = onName,
+            singleLine = true,
+            placeholder = { Text("Seu nome", color = colors.onSurfaceDim) },
+            shape = Shapes.md,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = colors.onSurface,
+                unfocusedTextColor = colors.onSurface,
+                cursorColor = colors.accent,
+                focusedBorderColor = colors.accent,
+                unfocusedBorderColor = colors.outline,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(28.dp))
         SectionLabel("Seu nível")
         Spacer(Modifier.height(12.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            MockRepository.levels.forEach { l ->
+            DanceCatalog.levels.forEach { l ->
                 LevelRow(l.label, l.description, selected = level == l.id, onClick = { onLevel(l.id) })
             }
         }
 
         Spacer(Modifier.height(28.dp))
-        SectionLabel("Estilo preferido")
-        Spacer(Modifier.height(12.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MockRepository.styles.forEach { s ->
-                DcaChip(s.name, active = style == s.id, onClick = { onStyle(s.id) }, leading = s.emoji)
-            }
-        }
+        Text(
+            "O treino é focado no forró universitário — é o estilo que os módulos de " +
+                "análise avaliam.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceDim,
+        )
     }
 }
 

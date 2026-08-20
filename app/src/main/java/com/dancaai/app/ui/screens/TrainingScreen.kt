@@ -22,11 +22,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.FlipCameraAndroid
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PersonSearch
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +42,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import androidx.compose.ui.Alignment
@@ -58,20 +62,25 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.dancaai.app.audio.Metronome
-import com.dancaai.app.audio.MetronomeBpmStore
+import com.dancaai.app.MovementDirection
+import com.dancaai.app.PostureResult
 import com.dancaai.app.PostureValidator
+import com.dancaai.app.WeightInfo
+import com.dancaai.app.WeightLeg
+import com.dancaai.app.analysis.SessionAccumulator
 import com.dancaai.app.camera.PoseCameraView
+import com.dancaai.app.data.model.RhythmJudgement
+import com.dancaai.app.data.model.RhythmTiming
+import com.dancaai.app.data.model.SessionConfig
+import com.dancaai.app.data.model.SessionMetrics
 import com.dancaai.app.export.SheetsUploader
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.MetronomeControl
-import com.dancaai.app.ui.components.beatLabels
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
 import kotlinx.coroutines.delay
-
-private const val TOTAL_SECONDS = 5 * 60
 
 private data class LandmarkXYZ(val x: Float, val y: Float, val z: Float)
 
@@ -160,11 +169,20 @@ private fun DebugSnapshot.toSheetRow(): List<Any> {
 
 /**
  * Tela de Treino: feed real da câmera + esqueleto MediaPipe (PoseCameraView)
- * com HUD em Compose por cima. Scores e beat são mockados/animados — a pontuação
- * real (biomecânica/ritmo) será conectada quando implementada.
+ * com HUD em Compose por cima.
+ *
+ * A duração e o BPM vêm do [SessionConfig] montado na tela de Nova sessão. Os
+ * módulos de postura e de transferência de peso alimentam o HUD em tempo real e
+ * o [SessionAccumulator], cujas contagens brutas [onEnd] entrega para gravação.
  */
 @Composable
-fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun TrainingScreen(
+    config: SessionConfig,
+    onConfigChange: ((SessionConfig) -> SessionConfig) -> Unit,
+    onEnd: (elapsedSec: Int, metrics: SessionMetrics) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
@@ -182,17 +200,40 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
 
     var paused by remember { mutableStateOf(false) }
     var elapsed by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(paused) {
-        while (!paused) {
-            delay(1000); elapsed++
-        }
-    }
+    val totalSeconds = config.durationSec
 
     val cameraViewRef = remember { mutableStateOf<PoseCameraView?>(null) }
     var poseUnavailable by remember { mutableStateOf(false) }
     val snapshots = remember { mutableStateListOf<DebugSnapshot>() }
     var showDebugResults by remember { mutableStateOf(false) }
+
+    // ── Saída ao vivo dos módulos de análise ──
+    val accumulator = remember { SessionAccumulator() }
+    var postureResult by remember { mutableStateOf<PostureResult>(PostureResult.Unknown) }
+    var weightInfo by remember {
+        mutableStateOf(WeightInfo(WeightLeg.NEUTRAL, MovementDirection.NEUTRAL, false, 0, 0))
+    }
+    var lastJudgement by remember { mutableStateOf<RhythmJudgement?>(null) }
+    // Os callbacks da câmera e do metrônomo são atribuídos uma única vez, na
+    // criação da View; sem isto capturariam os valores iniciais e seguiriam
+    // acumulando durante a pausa ou usando o compasso antigo.
+    val pausedState = rememberUpdatedState(paused)
+    val configState = rememberUpdatedState(config)
+
+    // Encerrar com capturas pendentes abre primeiro a revisão de debug; sem elas,
+    // fecha a sessão direto. Vale tanto pro botão quanto pro fim do cronômetro.
+    fun finish() {
+        if (snapshots.isEmpty()) onEnd(elapsed, accumulator.snapshot()) else showDebugResults = true
+    }
+
+    LaunchedEffect(paused) {
+        while (!paused && elapsed < totalSeconds) {
+            delay(1000)
+            elapsed++
+        }
+        // o laço também termina quando a sessão é pausada — aí não há o que encerrar
+        if (elapsed >= totalSeconds) finish()
+    }
 
     // captura landmarks atuais com o rótulo dado, guarda localmente e envia pro Sheets
     // (se configurado — SheetsUploader.upload() é no-op silencioso sem a URL).
@@ -204,10 +245,9 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
         }
     }
 
-    // ── Metrônomo: motor de áudio + estado da UI (play manual, BPM persistido) ──
-    val bpmStore = remember { MetronomeBpmStore(context) }
+    // ── Metrônomo: motor de áudio + estado da UI (play manual, BPM vindo da config) ──
     val metronome = remember { Metronome() }
-    var metronomeBpm by remember { mutableIntStateOf(bpmStore.load()) }
+    val metronomeBpm = config.bpm
     var metronomePlaying by remember { mutableStateOf(false) }
     var metronomeBeat by remember { mutableIntStateOf(-1) }
 
@@ -217,28 +257,35 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
     var continuousCycleCount by remember { mutableIntStateOf(0) }
 
     DisposableEffect(Unit) {
-        metronome.onBeat = { idx ->
+        metronome.onBeat = { idx, audibleAtUptimeMs ->
             metronomeBeat = idx
+            val current = configState.value
+            val labels = current.beatPattern.beatLabels
+            // a grade do módulo de ritmo vem do BPM configurado, exato por
+            // construção, e não do intervalo entre callbacks, que carrega jitter
+            if (!pausedState.value) {
+                accumulator.onBeat(audibleAtUptimeMs, current.beatIntervalMs)
+            }
             when {
                 continuousCapturing -> {
-                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${beatLabels[idx]}")
-                    if (idx == beatLabels.lastIndex) continuousCapturing = false
+                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${labels[idx]}")
+                    if (idx == labels.lastIndex) continuousCapturing = false
                 }
                 continuousArmed && idx == 0 -> {
                     // início de um novo ciclo: a partir daqui é este ciclo que é capturado
                     continuousArmed = false
                     continuousCapturing = true
                     continuousCycleCount++
-                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${beatLabels[idx]}")
+                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${labels[idx]}")
                 }
             }
         }
         onDispose { metronome.stop() }
     }
-    LaunchedEffect(metronomeBpm) {
-        metronome.bpm = metronomeBpm
-        bpmStore.save(metronomeBpm)
-    }
+    LaunchedEffect(metronomeBpm) { metronome.bpm = metronomeBpm }
+    LaunchedEffect(config.beatPattern) { metronome.pattern = config.beatPattern }
+    // sem metrônomo tocando não há grade; o último veredito deixa de valer
+    LaunchedEffect(metronomePlaying) { if (!metronomePlaying) lastJudgement = null }
     // silencia o metrônomo quando a sessão é pausada, sem perder o BPM/estado "estava tocando"
     LaunchedEffect(paused) {
         if (paused) metronome.stop() else if (metronomePlaying) metronome.start()
@@ -257,6 +304,22 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                 factory = { ctx ->
                     PoseCameraView(ctx).also {
                         it.onPoseUnavailable = { poseUnavailable = true }
+                        it.onPostureResult = { result ->
+                            postureResult = result
+                            if (!pausedState.value) accumulator.onPosture(result)
+                        }
+                        it.onWeightInfo = { info ->
+                            weightInfo = info
+                            if (!pausedState.value) accumulator.onWeight(info)
+                        }
+                        it.onWeightTransition = { _, atUptimeMs ->
+                            if (!pausedState.value) {
+                                // nulo quando o metrônomo está desligado: sem grade, sem veredito
+                                accumulator.onWeightTransition(atUptimeMs)?.let { judgement ->
+                                    lastJudgement = judgement
+                                }
+                            }
+                        }
                         it.bind(lifecycleOwner)
                         cameraViewRef.value = it
                     }
@@ -278,7 +341,7 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             contentAlignment = Alignment.TopCenter,
         ) {
-            TimerControl(elapsed, paused) { paused = !paused }
+            TimerControl(elapsed, totalSeconds, paused) { paused = !paused }
         }
 
         // botão alternar câmera
@@ -288,6 +351,12 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                 contentDescription = "Alternar câmera",
                 onClick = { cameraViewRef.value?.switchCamera() },
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
+            )
+
+            // módulo de transferência de peso — onde ficava o painel da OverlayView
+            WeightBadge(
+                info = weightInfo,
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
             )
         }
 
@@ -316,11 +385,14 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (metronomePlaying) RhythmBadge(lastJudgement)
+            if (hasPermission) PostureBadge(postureResult)
             MetronomeControl(
                 bpm = metronomeBpm,
                 playing = metronomePlaying,
                 activeBeat = metronomeBeat,
-                onBpmChange = { metronomeBpm = it },
+                pattern = config.beatPattern,
+                onBpmChange = { bpm -> onConfigChange { it.copy(bpm = bpm) } },
                 onTogglePlay = {
                     metronomePlaying = !metronomePlaying
                     if (metronomePlaying) metronome.start() else metronome.stop()
@@ -344,26 +416,26 @@ fun TrainingScreen(onEnd: () -> Unit, onBack: () -> Unit, modifier: Modifier = M
                     },
                 )
             }
-            EndButton {
-                if (snapshots.isEmpty()) onEnd()
-                else showDebugResults = true
-            }
+            EndButton { finish() }
         }
 
         // veil de pausa
         if (paused) {
-            PausedVeil(onResume = { paused = false }, onEnd = onEnd)
+            PausedVeil(onResume = { paused = false }, onEnd = { finish() })
         }
 
         // resultados de debug (substitui a tela após encerrar)
         if (showDebugResults) {
-            DebugResultsOverlay(snapshots = snapshots, onClose = onEnd)
+            DebugResultsOverlay(
+                snapshots = snapshots,
+                onClose = { onEnd(elapsed, accumulator.snapshot()) },
+            )
         }
     }
 }
 
 @Composable
-private fun TimerControl(elapsed: Int, paused: Boolean, onPause: () -> Unit) {
+private fun TimerControl(elapsed: Int, totalSeconds: Int, paused: Boolean, onPause: () -> Unit) {
     val mm = (elapsed / 60).toString().padStart(2, '0')
     val ss = (elapsed % 60).toString().padStart(2, '0')
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -383,9 +455,126 @@ private fun TimerControl(elapsed: Int, paused: Boolean, onPause: () -> Unit) {
         ) {
             Box(
                 Modifier
-                    .fillMaxWidth((elapsed.toFloat() / TOTAL_SECONDS).coerceIn(0f, 1f))
+                    .fillMaxWidth((elapsed.toFloat() / totalSeconds).coerceIn(0f, 1f))
                     .height(3.dp)
                     .background(DcaTheme.colors.accent),
+            )
+        }
+    }
+}
+
+/**
+ * Módulo de postura em uma linha. O feedback é curto e direto por decisão de
+ * projeto: quem está dançando não lê parágrafo.
+ */
+@Composable
+private fun PostureBadge(result: PostureResult) {
+    val (text, tint, icon) = when (result) {
+        PostureResult.Good ->
+            Triple("Postura OK", Color(0xFF34D399), Icons.Rounded.CheckCircle)
+
+        PostureResult.Unknown ->
+            Triple(
+                "Procurando você no enquadramento",
+                Color.White.copy(alpha = 0.55f),
+                Icons.Rounded.PersonSearch,
+            )
+
+        is PostureResult.Bad -> Triple(
+            result.issues.joinToString(" · ") { it.label },
+            Color(0xFFF87171),
+            Icons.Rounded.WarningAmber,
+        )
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .clip(Shapes.pill)
+            .background(Color(0xFF141418).copy(alpha = 0.82f))
+            .border(1.dp, tint.copy(alpha = 0.35f), Shapes.pill)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * Módulo de ritmo: como a última transferência de peso caiu em relação à batida.
+ * Enquanto nenhuma transferência foi julgada, convida a começar em vez de mostrar
+ * um veredito vazio.
+ */
+@Composable
+private fun RhythmBadge(judgement: RhythmJudgement?) {
+    val (text, tint) = when (judgement?.timing) {
+        null -> "Dance no tempo do metrônomo" to Color.White.copy(alpha = 0.55f)
+        RhythmTiming.ON_TIME -> "No tempo" to Color(0xFF34D399)
+        RhythmTiming.EARLY -> "Adiantado ${-judgement.offsetMs} ms" to Color(0xFFF59E0B)
+        RhythmTiming.LATE -> "Atrasado ${judgement.offsetMs} ms" to Color(0xFFF59E0B)
+    }
+
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = tint,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .clip(Shapes.pill)
+            .background(Color(0xFF141418).copy(alpha = 0.82f))
+            .border(1.dp, tint.copy(alpha = 0.35f), Shapes.pill)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    )
+}
+
+/** Módulo de transferência de peso: pé de apoio no momento e placar de acertos. */
+@Composable
+private fun WeightBadge(info: WeightInfo, modifier: Modifier = Modifier) {
+    val (label, tint) = when (info.leg) {
+        WeightLeg.LEFT -> "Esquerda" to Color(0xFF40C4FF)
+        WeightLeg.RIGHT -> "Direita" to Color(0xFFFFB432)
+        WeightLeg.NEUTRAL -> "Neutro" to Color.White.copy(alpha = 0.7f)
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier
+            .clip(Shapes.lg)
+            .background(Color(0xFF141418).copy(alpha = 0.82f))
+            .border(1.dp, Color.White.copy(alpha = 0.1f), Shapes.lg)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(
+            "APOIO",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.55f),
+        )
+        Text(label, style = MaterialTheme.typography.titleMedium, color = tint)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "✓ ${info.correctCount}",
+                fontFamily = MonoFontFamily,
+                fontSize = 12.sp,
+                color = Color(0xFF34D399),
+            )
+            Text(
+                "✗ ${info.errorCount}",
+                fontFamily = MonoFontFamily,
+                fontSize = 12.sp,
+                color = Color(0xFFF87171),
+            )
+        }
+        if (info.showError) {
+            Text(
+                "Marcação incorreta",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFF87171),
             )
         }
     }
