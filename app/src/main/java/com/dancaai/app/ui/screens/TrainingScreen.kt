@@ -77,6 +77,7 @@ import com.dancaai.app.export.SheetsUploader
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.MetronomeControl
+import com.dancaai.app.ui.components.navigationBarsOrMinPadding
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
@@ -381,7 +382,8 @@ fun TrainingScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp),
+                .padding(start = 16.dp, top = 20.dp, end = 16.dp)
+                .navigationBarsOrMinPadding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -680,7 +682,7 @@ private fun DebugResultsOverlay(snapshots: List<DebugSnapshot>, onClose: () -> U
                 modifier = Modifier.weight(1f),
             )
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.navigationBarsOrMinPadding(24.dp))
     }
 }
 

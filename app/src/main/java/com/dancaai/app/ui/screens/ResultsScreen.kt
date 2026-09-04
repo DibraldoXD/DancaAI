@@ -39,6 +39,7 @@ import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.DcaTopBar
 import com.dancaai.app.ui.components.SectionLabel
+import com.dancaai.app.ui.components.navigationBarsOrMinPadding
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
@@ -85,7 +86,8 @@ fun ResultsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(colors.bg)
-                .padding(horizontal = 24.dp, vertical = 12.dp),
+                .padding(start = 24.dp, top = 12.dp, end = 24.dp)
+                .navigationBarsOrMinPadding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             DcaOutlinedButton("Início", onClick = onHome, modifier = Modifier.weight(1f))

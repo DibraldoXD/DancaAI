@@ -5,8 +5,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,9 +52,17 @@ fun BottomNav(
     modifier: Modifier = Modifier,
 ) {
     val colors = DcaTheme.colors
+    // O fundo vai até a borda física (edge-to-edge). O conteúdo clicável não pode
+    // ficar coberto pela barra de navegação do sistema — mas em vez de só empurrá-lo
+    // pra cima (deixando um vão vazio embaixo, fora do centro visual da faixa), a
+    // altura da faixa cresce pra caber o inset e o conteúdo fica centralizado nela.
+    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Column(modifier = modifier.fillMaxWidth().background(colors.surface)) {
         androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = colors.outlineSoft)
-        Row(modifier = Modifier.fillMaxWidth().height(76.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().height(76.dp + navBarInset),
+        ) {
         DcaTab.entries.forEach { tab ->
             val active = tab == selected
             Column(

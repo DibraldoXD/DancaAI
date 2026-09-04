@@ -50,6 +50,7 @@ import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.DcaTextButton
 import com.dancaai.app.ui.components.Dots
 import com.dancaai.app.ui.components.SectionLabel
+import com.dancaai.app.ui.components.navigationBarsOrMinPadding
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.Shapes
 import kotlinx.coroutines.launch
@@ -76,7 +77,9 @@ fun OnboardingScreen(
         }
 
         Column(
-            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .navigationBarsOrMinPadding(32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Dots(total = 3, index = pagerState.currentPage, modifier = Modifier.align(Alignment.CenterHorizontally))

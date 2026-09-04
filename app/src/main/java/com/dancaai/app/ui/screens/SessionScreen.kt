@@ -41,6 +41,7 @@ import com.dancaai.app.ui.components.DcaCard
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaTopBar
 import com.dancaai.app.ui.components.SectionLabel
+import com.dancaai.app.ui.components.navigationBarsOrMinPadding
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
@@ -141,7 +142,13 @@ fun SessionScreen(
             Spacer(Modifier.height(24.dp))
         }
 
-        Box(modifier = Modifier.fillMaxWidth().background(colors.bg).padding(24.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colors.bg)
+                .padding(start = 24.dp, top = 24.dp, end = 24.dp)
+                .navigationBarsOrMinPadding(24.dp),
+        ) {
             DcaFilledButton(
                 "Começar",
                 onClick = onStart,
