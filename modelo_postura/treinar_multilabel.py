@@ -198,25 +198,62 @@ print(f"\nColunas de membros inferiores no conjunto: {len(inferiores_cols)} de {
 # %% ─────────────── 6. MLP multirrótulo com validação por sessão ───────────────
 
 
-def construir_mlp(n_features: int, X_ajuste: np.ndarray) -> tf.keras.Model:
-    """MLP pequena com 3 saídas sigmoid — multirrótulo por construção.
+def construir_modelo(n_features: int, X_ajuste: np.ndarray, arquitetura: str) -> tf.keras.Model:
+    """Modelo multirrótulo: 3 saídas sigmoid independentes.
 
     A normalização entra como camada do grafo, então o TFLite recebe as features
     cruas e o Kotlin não precisa replicar média/desvio à mão.
+
+    `linear` é uma regressão logística escrita como rede de uma camada — com 256
+    amostras e 4 participantes, uma MLP tem mais parâmetros que exemplos e decora
+    as pessoas do treino. O modelo linear converte para TFLite igualmente bem.
     """
     normalizacao = tf.keras.layers.Normalization()
     normalizacao.adapt(X_ajuste)
-    modelo = tf.keras.Sequential(
-        [
-            tf.keras.layers.Input(shape=(n_features,)),
-            normalizacao,
-            tf.keras.layers.Dense(16, activation="relu"),
-            tf.keras.layers.Dense(8, activation="relu"),
-            tf.keras.layers.Dense(len(DESVIOS), activation="sigmoid"),
+    camadas = [tf.keras.layers.Input(shape=(n_features,)), normalizacao]
+
+    if arquitetura == "mlp":
+        camadas += [
+            tf.keras.layers.Dense(
+                8, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-3)
+            ),
+            tf.keras.layers.Dropout(0.3),
         ]
+
+    camadas.append(
+        tf.keras.layers.Dense(
+            len(DESVIOS),
+            activation="sigmoid",
+            kernel_regularizer=tf.keras.regularizers.l2(1e-3),
+        )
     )
+    modelo = tf.keras.Sequential(camadas)
     modelo.compile(optimizer="adam", loss="binary_crossentropy")
     return modelo
+
+
+def treinar(modelo: tf.keras.Model, X: np.ndarray, Y_alvo: np.ndarray) -> None:
+    """Treina embaralhando antes da validação interna.
+
+    O `validation_split` do Keras separa os ÚLTIMOS exemplos na ordem recebida,
+    sem embaralhar. Como o dataframe está ordenado por Timestamp e a coleta foi
+    feita em blocos por desvio, a validação cairia quase toda sobre um único
+    rótulo e o early stopping pararia o treino num ponto arbitrário.
+    """
+    ordem = np.random.RandomState(RANDOM_STATE).permutation(len(X))
+    modelo.fit(
+        X[ordem],
+        Y_alvo[ordem],
+        epochs=400,
+        batch_size=16,
+        verbose=0,
+        validation_split=0.2,
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(
+                patience=50, restore_best_weights=True, monitor="val_loss"
+            )
+        ],
+    )
 
 
 def avaliar(Y_real: np.ndarray, Y_pred: np.ndarray, titulo: str) -> dict:
@@ -238,34 +275,53 @@ def avaliar(Y_real: np.ndarray, Y_pred: np.ndarray, titulo: str) -> dict:
 
 
 resultados = {}
-for nome_conjunto, X in CONJUNTOS.items():
-    Xv = X.to_numpy(dtype="float32")
-    Y_pred = np.zeros_like(Y)
-    for tr, te in cv.split(Xv, Y[:, 0], grupos):
-        modelo = construir_mlp(Xv.shape[1], Xv[tr])
-        modelo.fit(
-            Xv[tr], Y[tr], epochs=300, batch_size=16, verbose=0,
-            validation_split=0.2,
-            callbacks=[tf.keras.callbacks.EarlyStopping(patience=30, restore_best_weights=True)],
-        )
-        Y_pred[te] = (modelo.predict(Xv[te], verbose=0) > 0.5).astype(int)
-    resultados[nome_conjunto] = avaliar(
-        Y, Y_pred, f"MLP multirrótulo — features {nome_conjunto}"
-    )
+for arquitetura in ("linear", "mlp"):
+    for nome_conjunto, X in CONJUNTOS.items():
+        Xv = X.to_numpy(dtype="float32")
+        Y_pred = np.zeros_like(Y)
+        for tr, te in cv.split(Xv, Y[:, 0], grupos):
+            modelo = construir_modelo(Xv.shape[1], Xv[tr], arquitetura)
+            treinar(modelo, Xv[tr], Y[tr])
+            Y_pred[te] = (modelo.predict(Xv[te], verbose=0) > 0.5).astype(int)
+        chave = f"{arquitetura} · {nome_conjunto}"
+        resultados[chave] = avaliar(Y, Y_pred, f"Modelo {chave}")
 
-avaliar(Y, Y_regras, "Regras geométricas do app (PostureValidator), comparação justa")
+metricas_regras = avaliar(
+    Y, Y_regras, "Regras geométricas do app (PostureValidator), comparação justa"
+)
+
+print("\n" + "=" * 78)
+print("RESUMO — f1 macro (validação entre participantes)")
+print("=" * 78)
+placar = {**{k: v["f1_macro"] for k, v in resultados.items()},
+          "REGRAS do app": metricas_regras["f1_macro"]}
+for nome, valor in sorted(placar.items(), key=lambda kv: -kv[1]):
+    marca = "  ←" if nome == "REGRAS do app" else ""
+    print(f"{nome:<40}{valor:>8.3f}{marca}")
+
+if metricas_regras["f1_macro"] >= max(resultados.values(), key=lambda v: v["f1_macro"])["f1_macro"]:
+    print(
+        "\n⚠  As regras geométricas venceram todos os modelos treinados.\n"
+        "   Com 4 participantes, esse é um resultado plausível e honesto: regras\n"
+        "   baseadas em ângulo são invariantes à pessoa por construção, enquanto\n"
+        "   o modelo precisa aprender essa invariância a partir de poucos exemplos.\n"
+        "   Nesse caso, embarcar um modelo que perde das regras não se justifica —\n"
+        "   o caminho é ampliar a coleta ou mirar o modelo apenas no desvio em que\n"
+        "   as regras falham (OF)."
+    )
 
 # %% ────────────────── 7. modelo final e exportação TFLite ──────────────────
 
 MELHOR = max(resultados, key=lambda k: resultados[k]["f1_macro"])
-print(f"\nConjunto escolhido: {MELHOR}")
+arquitetura_final, conjunto_final = MELHOR.split(" · ")
+print(f"\nMelhor combinação treinada: {MELHOR}")
+print("Exportando para validar o caminho até o TFLite — o que decide se ela vai")
+print("para o app é o resumo acima, comparado às regras.")
 
-X_final = CONJUNTOS[MELHOR].to_numpy(dtype="float32")
-modelo_final = construir_mlp(X_final.shape[1], X_final)
-modelo_final.fit(
-    X_final, Y, epochs=300, batch_size=16, verbose=0, validation_split=0.2,
-    callbacks=[tf.keras.callbacks.EarlyStopping(patience=30, restore_best_weights=True)],
-)
+colunas_finais = list(CONJUNTOS[conjunto_final].columns)
+X_final = CONJUNTOS[conjunto_final].to_numpy(dtype="float32")
+modelo_final = construir_modelo(X_final.shape[1], X_final, arquitetura_final)
+treinar(modelo_final, X_final, Y)
 
 
 def exportar_tflite(modelo: tf.keras.Model, caminho: str = "postura.tflite") -> int:
@@ -301,7 +357,7 @@ print(
 Para embarcar
 ─────────────
 · Ordem das entradas do modelo ({X_final.shape[1]} floats), a ser reproduzida em Kotlin:
-  {list(CONJUNTOS[MELHOR].columns)}
+  {colunas_finais}
 
 · Ordem das saídas ({len(DESVIOS)} floats, sigmoid independente): {DESVIOS}
   Cada valor é a probabilidade daquele desvio, entre 0 e 1. Postura boa é o caso
