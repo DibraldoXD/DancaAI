@@ -1,0 +1,6 @@
+# Snapshots do dataset e modelos gerados nunca entram no repositório: são dados
+# corporais de participantes, e este repositório é público. Ver a discussão de
+# aprovação do CEP no plano de trabalho antes de publicar qualquer coisa daqui.
+*.csv
+*.tflite
+saved_model/

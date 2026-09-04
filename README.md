@@ -83,6 +83,34 @@ Pré-requisitos: Android Studio, um **celular físico** (o MediaPipe com delegat
 
 Ou abra o projeto no Android Studio e rode a configuração padrão (`app`).
 
+### Envio de capturas pro Google Sheets (coleta de dados)
+
+Durante a coleta com usuários, a tela de Treino permite registrar capturas de pontos corporais (botão "Registrar" ou captura contínua sincronizada ao metrônomo) e enviá-las automaticamente pra uma planilha do Google Sheets, via [`SheetsUploader.kt`](app/src/main/java/com/dancaai/app/export/SheetsUploader.kt). Essa etapa é temporária: existe pra treinar os modelos de classificação (postura, movimentos) e será desativada quando a coleta terminar.
+
+O envio depende de uma URL de Google Apps Script publicada, que **não é commitada** — precisa ser configurada localmente:
+
+1. Peça a URL do Apps Script já publicado a quem o configurou (o script recebe um POST e escreve a linha na planilha).
+2. No arquivo `local.properties` (na raiz do projeto, já ignorado pelo git), adicione:
+   ```properties
+   SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/SEU_ID_AQUI/exec
+   ```
+3. Rebuild o app. Sem essa linha, `SheetsUploader.enabled` é `false` e o envio vira um no-op silencioso — a captura continua funcionando localmente (visível na revisão de debug ao encerrar a sessão), só não sobe pra planilha.
+
+O payload enviado é um POST JSON no formato `{"values": [...]}`, com uma linha de 38 colunas nesta ordem fixa (2 de metadado + 11 landmarks × x/y/z + 3 métricas derivadas) (ver `toSheetRow()` em [`TrainingScreen.kt`](app/src/main/java/com/dancaai/app/ui/screens/TrainingScreen.kt)):
+
+```
+timestamp, label,
+nose.x, nose.y, nose.z,
+leftEar.x/y/z, rightEar.x/y/z,
+leftShoulder.x/y/z, rightShoulder.x/y/z,
+leftHip.x/y/z, rightHip.x/y/z,
+leftKnee.x/y/z, rightKnee.x/y/z,
+leftAnkle.x/y/z, rightAnkle.x/y/z,
+shoulderSpan, zDiff, thresholdOmbrosEncurvados
+```
+
+O Apps Script do lado do Google precisa esperar exatamente essas colunas, nessa ordem — se a URL não estiver funcionando, confira primeiro se o script ainda está publicado com acesso "Qualquer pessoa" e se aceita esse formato de `values`.
+
 ### Testes
 
 ```bash
