@@ -24,10 +24,12 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 from sklearn.model_selection import GroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
@@ -175,11 +177,18 @@ print("=" * 78)
 cv = GroupKFold(n_splits=min(5, df["sessao"].nunique()))
 treino_idx, teste_idx = next(cv.split(X_todas, Y[:, 0], grupos))
 
+# Regressão logística, e não Random Forest: na primeira execução o RF não
+# transferia entre participantes (previa negativo para tudo no fold de teste), e
+# aí a importância dava zero em todas as colunas — resultado sobre o fracasso do
+# RF, não sobre as coordenadas. O modelo linear generaliza e a importância dele
+# diz algo sobre o problema.
 for i, d in enumerate(DESVIOS):
-    rf = RandomForestClassifier(n_estimators=400, random_state=RANDOM_STATE)
-    rf.fit(X_todas.iloc[treino_idx], Y[treino_idx, i])
+    estimador = make_pipeline(
+        StandardScaler(), LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)
+    )
+    estimador.fit(X_todas.iloc[treino_idx], Y[treino_idx, i])
     imp = permutation_importance(
-        rf, X_todas.iloc[teste_idx], Y[teste_idx, i],
+        estimador, X_todas.iloc[teste_idx], Y[teste_idx, i],
         n_repeats=20, random_state=RANDOM_STATE, scoring="f1",
     )
     ranking = (
@@ -275,16 +284,18 @@ def avaliar(Y_real: np.ndarray, Y_pred: np.ndarray, titulo: str) -> dict:
 
 
 resultados = {}
+probabilidades = {}
 for arquitetura in ("linear", "mlp"):
     for nome_conjunto, X in CONJUNTOS.items():
         Xv = X.to_numpy(dtype="float32")
-        Y_pred = np.zeros_like(Y)
+        Y_prob = np.zeros(Y.shape, dtype=float)
         for tr, te in cv.split(Xv, Y[:, 0], grupos):
             modelo = construir_modelo(Xv.shape[1], Xv[tr], arquitetura)
             treinar(modelo, Xv[tr], Y[tr])
-            Y_pred[te] = (modelo.predict(Xv[te], verbose=0) > 0.5).astype(int)
+            Y_prob[te] = modelo.predict(Xv[te], verbose=0)
         chave = f"{arquitetura} · {nome_conjunto}"
-        resultados[chave] = avaliar(Y, Y_pred, f"Modelo {chave}")
+        probabilidades[chave] = Y_prob
+        resultados[chave] = avaliar(Y, (Y_prob > 0.5).astype(int), f"Modelo {chave}")
 
 metricas_regras = avaliar(
     Y, Y_regras, "Regras geométricas do app (PostureValidator), comparação justa"
@@ -310,13 +321,74 @@ if metricas_regras["f1_macro"] >= max(resultados.values(), key=lambda v: v["f1_m
         "   as regras falham (OF)."
     )
 
-# %% ────────────────── 7. modelo final e exportação TFLite ──────────────────
+# %% ───── 7. solução híbrida: cada desvio com a ferramenta que ganha nele ─────
 
-MELHOR = max(resultados, key=lambda k: resultados[k]["f1_macro"])
-arquitetura_final, conjunto_final = MELHOR.split(" · ")
-print(f"\nMelhor combinação treinada: {MELHOR}")
-print("Exportando para validar o caminho até o TFLite — o que decide se ela vai")
-print("para o app é o resumo acima, comparado às regras.")
+# A separação tem base mecânica, não só empírica — o que a torna defensável
+# mesmo com poucos participantes:
+#
+#   OE/OD dependem do ângulo da linha dos ombros no plano da imagem (x,y), onde
+#   o MediaPipe é confiável. Uma medida geométrica fechada e correta não tem
+#   como ser superada por um modelo aprendendo a mesma coisa com 4 pessoas.
+#
+#   OF depende do eixo z, que o MediaPipe ESTIMA, com ruído e viés. Limiar fixo
+#   sobre sinal enviesado é exatamente onde aprender compensa.
+IDX = {d: i for i, d in enumerate(DESVIOS)}
+
+
+def f1_do_desvio(prob: np.ndarray, desvio: str, limiar: float = 0.5) -> float:
+    return f1_score(
+        Y[:, IDX[desvio]], (prob[:, IDX[desvio]] > limiar).astype(int), zero_division=0
+    )
+
+
+melhor_of = max(probabilidades, key=lambda k: f1_do_desvio(probabilidades[k], "OF"))
+print(f"\nModelo escolhido para OF: {melhor_of}")
+
+Y_hibrido = Y_regras.copy()
+Y_hibrido[:, IDX["OF"]] = (probabilidades[melhor_of][:, IDX["OF"]] > 0.5).astype(int)
+metricas_hibrido = avaliar(Y, Y_hibrido, "HÍBRIDO — regras em OE/OD, modelo em OF")
+
+print(
+    f"\nf1 macro:  híbrido {metricas_hibrido['f1_macro']:.3f}  |  "
+    f"regras {metricas_regras['f1_macro']:.3f}  |  "
+    f"melhor modelo sozinho {max(r['f1_macro'] for r in resultados.values()):.3f}"
+)
+print(
+    "\n⚠  A escolha por desvio olhou as mesmas dobras que a medem, então há viés de\n"
+    "   seleção. O que sustenta o híbrido é o argumento mecânico acima; os números\n"
+    "   confirmam, não provam. Com mais participantes isso se resolve."
+)
+
+# %% ────────── 8. calibração do limiar do OF (atividade A.3.3) ──────────
+
+# Onde se decide o equilíbrio entre alarme falso e postura ruim liberada. Para
+# um app de treino, liberar postura ruim é o erro caro: o usuário reforça o
+# vício que veio corrigir.
+prob_of = probabilidades[melhor_of][:, IDX["OF"]]
+alvo_of = Y[:, IDX["OF"]]
+ruim_real = Y.any(axis=1)
+
+print("\n" + "=" * 78)
+print(f"CALIBRAÇÃO DO LIMIAR DE OF — {melhor_of}")
+print("=" * 78)
+print(f"{'limiar':>8}{'precisão':>10}{'recall':>10}{'f1':>8}{'ruim liberada':>16}")
+for limiar in np.arange(0.20, 0.80, 0.05):
+    pred_of = (prob_of > limiar).astype(int)
+    p, r, f, _ = precision_recall_fscore_support(
+        alvo_of, pred_of, average="binary", zero_division=0
+    )
+    hib = Y_regras.copy()
+    hib[:, IDX["OF"]] = pred_of
+    liberada = (ruim_real & ~hib.any(axis=1)).sum() / max(ruim_real.sum(), 1)
+    print(f"{limiar:>8.2f}{p:>10.3f}{r:>10.3f}{f:>8.3f}{liberada:>16.3f}")
+
+# %% ────────────────── 9. modelo final e exportação TFLite ──────────────────
+
+# Exporta o modelo escolhido para OF. Ele mantém as 3 saídas: no híbrido o app
+# usa só a de OF, mas guardar as outras não custa nada e evita retreinar se a
+# decisão mudar quando houver mais participantes.
+arquitetura_final, conjunto_final = melhor_of.split(" · ")
+print(f"\nExportando: {melhor_of}")
 
 colunas_finais = list(CONJUNTOS[conjunto_final].columns)
 X_final = CONJUNTOS[conjunto_final].to_numpy(dtype="float32")
@@ -360,8 +432,13 @@ Para embarcar
   {colunas_finais}
 
 · Ordem das saídas ({len(DESVIOS)} floats, sigmoid independente): {DESVIOS}
-  Cada valor é a probabilidade daquele desvio, entre 0 e 1. Postura boa é o caso
-  em que os três ficam abaixo do limiar — não existe saída "boa" no modelo.
+  Cada valor é a probabilidade daquele desvio, entre 0 e 1.
+
+· NA ARQUITETURA HÍBRIDA o app usa apenas a saída de OF. Ombro caído esquerdo e
+  direito continuam vindo do PostureValidator, que ganha do modelo nesses dois.
+  Em Kotlin: PostureValidator devolve a lista de desvios como hoje, e
+  SHOULDERS_FORWARD passa a ser decidido pelo modelo em vez do limiar de z.
+  Postura boa segue sendo o caso em que a lista final está vazia.
 
 · A normalização está dentro do grafo: passe as features cruas, sem escalar.
 
