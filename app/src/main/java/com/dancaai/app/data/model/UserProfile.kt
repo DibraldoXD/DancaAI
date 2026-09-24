@@ -11,22 +11,17 @@ data class UserProfile(
     val streakDays: Int,
 )
 
-/** Faixa musical selecionada para a sessão (tela de Configurar Sessão). */
-data class Music(
-    val title: String,
-    val artist: String,
-    val duration: String,
-    val bpm: Int,
-    val key: String,
-)
-
 /** Resumo da Home: último treino + evolução da semana. */
 data class HomeSummary(
     val greeting: String,
-    val lastSession: Session,
+    val firstName: String,
+    val initial: String,
+    val lastSession: Session?,
+    /** Média diária dos últimos 7 dias; vazio enquanto nenhum módulo tiver medido. */
     val weekScores: List<Int>,
     val weekDays: List<String>,
-    val weekAverage: Int,
-    val weekDeltaPercent: Int,
+    val weekAverage: Int?,
+    val weekDeltaPercent: Int?,
     val weekSessions: Int,
+    val streakDays: Int,
 )

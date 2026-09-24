@@ -9,6 +9,15 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import kotlin.math.max
 
+/**
+ * Camada de desenho sobre o preview da câmera.
+ *
+ * Desenha apenas o que precisa estar ancorado no corpo — esqueleto, landmarks e
+ * ombros coloridos pelo resultado da postura. O texto de feedback (postura,
+ * transferência de peso, contadores) é responsabilidade do HUD em Compose, que
+ * segue o design system do app; duplicar aqui produziria dois feedbacks
+ * concorrentes na mesma tela.
+ */
 class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
     private var results: PoseLandmarkerResult? = null
@@ -17,7 +26,13 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
     private var isFrontCamera: Boolean = false
     private var angles: BodyAngles? = null
     private var postureResult: PostureResult = PostureResult.Unknown
-    private var weightInfo: WeightInfo = WeightInfo(WeightLeg.NEUTRAL, MovementDirection.NEUTRAL, false, 0, 0)
+
+    /** Ângulos articulares são instrumentação de desenvolvimento, não feedback ao usuário. */
+    var showAngles: Boolean = BuildConfig.DEBUG
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     // ── Paints ──────────────────────────────────────────────────────────────
 
@@ -40,20 +55,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         setShadowLayer(3f, 1f, 1f, Color.BLACK)
     }
 
-    private val postureOkPaint = Paint().apply {
-        color = Color.GREEN
-        textSize = 38f
-        typeface = Typeface.DEFAULT_BOLD
-        setShadowLayer(4f, 2f, 2f, Color.BLACK)
-    }
-
-    private val postureWarnPaint = Paint().apply {
-        color = Color.RED
-        textSize = 38f
-        typeface = Typeface.DEFAULT_BOLD
-        setShadowLayer(4f, 2f, 2f, Color.BLACK)
-    }
-
     private val shoulderOkPaint = Paint().apply {
         color = Color.GREEN
         strokeWidth = 12f
@@ -64,37 +65,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         color = Color.RED
         strokeWidth = 12f
         style = Paint.Style.FILL
-    }
-
-    private val weightBgPaint = Paint().apply {
-        color = Color.argb(160, 0, 0, 0)
-        style = Paint.Style.FILL
-    }
-
-    private val weightLegPaint = Paint().apply {
-        textSize = 52f
-        typeface = Typeface.DEFAULT_BOLD
-        setShadowLayer(4f, 2f, 2f, Color.BLACK)
-    }
-
-    private val weightDirPaint = Paint().apply {
-        textSize = 64f
-        typeface = Typeface.DEFAULT_BOLD
-        setShadowLayer(4f, 2f, 2f, Color.BLACK)
-    }
-
-    private val weightErrorPaint = Paint().apply {
-        color = Color.rgb(255, 60, 60)
-        textSize = 36f
-        typeface = Typeface.DEFAULT_BOLD
-        setShadowLayer(4f, 2f, 2f, Color.BLACK)
-    }
-
-    private val weightCounterPaint = Paint().apply {
-        color = Color.WHITE
-        textSize = 32f
-        typeface = Typeface.DEFAULT_BOLD
-        setShadowLayer(3f, 1f, 1f, Color.BLACK)
     }
 
     // ── Métodos públicos ─────────────────────────────────────────────────────
@@ -122,18 +92,10 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
         invalidate()
     }
 
-    fun updateWeightInfo(info: WeightInfo) {
-        weightInfo = info
-        invalidate()
-    }
-
     // ── Desenho ──────────────────────────────────────────────────────────────
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
-        // Painel de peso sempre visível, independente de pose detectada
-        drawWeightPanel(canvas)
 
         val results = results ?: return
         if (results.landmarks().isEmpty()) return
@@ -181,8 +143,8 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
             16f, shoulderPaint
         )
 
-        // 4. Ângulos articulares
-        angles?.let { a ->
+        // 4. Ângulos articulares (instrumentação de desenvolvimento)
+        angles?.takeIf { showAngles }?.let { a ->
             drawAngle(canvas, landmarks[25], "%.0f°".format(a.leftKnee),      scaleFactor, offsetX, offsetY)
             drawAngle(canvas, landmarks[26], "%.0f°".format(a.rightKnee),     scaleFactor, offsetX, offsetY)
             drawAngle(canvas, landmarks[23], "%.0f°".format(a.leftHip),       scaleFactor, offsetX, offsetY)
@@ -193,92 +155,6 @@ class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs)
             drawAngle(canvas, landmarks[14], "%.0f°".format(a.rightElbow),    scaleFactor, offsetX, offsetY)
         }
 
-        // 5. Feedback de postura — acima do HUD inferior (metrônomo/registrar/encerrar)
-        when (val p = postureResult) {
-            is PostureResult.Good -> {
-                canvas.drawText(
-                    "✓ POSTURA OK",
-                    width * 0.5f - 130f,
-                    height * 0.62f,
-                    postureOkPaint
-                )
-            }
-            is PostureResult.Bad -> {
-                p.issues.forEachIndexed { i, issue ->
-                    canvas.drawText(
-                        "⚠ $issue",
-                        width * 0.5f - 200f,
-                        height * 0.50f + i * 44f,
-                        postureWarnPaint
-                    )
-                }
-            }
-            is PostureResult.Unknown -> {
-                canvas.drawText(
-                    "Aguardando pose...",
-                    width * 0.5f - 160f,
-                    height * 0.62f,
-                    anglePaint
-                )
-            }
-        }
-
-    }
-
-    private fun drawWeightPanel(canvas: Canvas) {
-        val info = weightInfo
-
-        val legText = when (info.leg) {
-            WeightLeg.LEFT    -> "ESQUERDA"
-            WeightLeg.RIGHT   -> "DIREITA"
-            WeightLeg.NEUTRAL -> "NEUTRO"
-        }
-        val legColor = when (info.leg) {
-            WeightLeg.LEFT    -> Color.rgb(64,  196, 255)
-            WeightLeg.RIGHT   -> Color.rgb(255, 180, 50)
-            WeightLeg.NEUTRAL -> Color.rgb(200, 200, 200)
-        }
-        val dirSymbol = when (info.direction) {
-            MovementDirection.LEFT    -> "←"
-            MovementDirection.RIGHT   -> "→"
-            MovementDirection.UP      -> "↑"
-            MovementDirection.DOWN    -> "↓"
-            MovementDirection.NEUTRAL -> "•"
-        }
-
-        val padH  = 16f
-        val padV  = 12f
-        val lineH = 56f
-        val panelW = 340f
-        val linesCount = if (info.showError) 3 else 2
-        val panelH = linesCount * lineH + padV * 2
-        val left = 8f
-        val top  = 8f
-
-        canvas.drawRoundRect(
-            RectF(left, top, left + panelW, top + panelH),
-            12f, 12f, weightBgPaint
-        )
-
-        // Linha 1: perna + seta
-        weightLegPaint.color = legColor
-        canvas.drawText(legText, left + padH, top + padV + lineH * 0.82f, weightLegPaint)
-        weightDirPaint.color = legColor
-        canvas.drawText(dirSymbol, left + panelW - padH - 64f, top + padV + lineH * 0.82f, weightDirPaint)
-
-        // Linha 2: contadores
-        canvas.drawText(
-            "✓ ${info.correctCount}    ✗ ${info.errorCount}",
-            left + padH, top + padV + lineH * 1.82f, weightCounterPaint
-        )
-
-        // Linha 3: aviso de erro (somente quando ativo)
-        if (info.showError) {
-            canvas.drawText(
-                "⚠ MARCAÇÃO INCORRETA",
-                left + padH, top + padV + lineH * 2.82f, weightErrorPaint
-            )
-        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -13,3 +13,11 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Dados de treino (podem conter dados de pessoas reais) e artefatos de modelo treinados
+training/posture_classifier/data/*
+!training/posture_classifier/data/.gitkeep
+training/posture_classifier/models/*
+!training/posture_classifier/models/.gitkeep
+__pycache__/
+*.pyc

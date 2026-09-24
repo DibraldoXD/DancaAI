@@ -14,19 +14,23 @@ import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.scoreColor
 
-/** Número de score em mono, colorido pela lógica de threshold (<50/50–75/>75). */
+/**
+ * Número de score em mono, colorido pela lógica de threshold (<50/50–75/>75).
+ * Nulo — módulo que ainda não mediu a sessão — vira um travessão neutro, para
+ * não ser lido como nota zero.
+ */
 @Composable
 fun ScoreNumber(
-    value: Int,
+    value: Int?,
     modifier: Modifier = Modifier,
     fontSize: TextUnit = 36.sp,
 ) {
     Text(
-        text = value.toString(),
+        text = value?.toString() ?: "—",
         fontFamily = MonoFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = fontSize,
-        color = scoreColor(value),
+        color = if (value != null) scoreColor(value) else DcaTheme.colors.onSurfaceDim,
         modifier = modifier,
     )
 }
@@ -35,7 +39,7 @@ fun ScoreNumber(
 @Composable
 fun ScoreInline(
     label: String,
-    value: Int,
+    value: Int?,
     modifier: Modifier = Modifier,
 ) {
     Column(horizontalAlignment = Alignment.End, modifier = modifier) {

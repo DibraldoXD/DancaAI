@@ -13,8 +13,11 @@ import androidx.lifecycle.LifecycleOwner
 import com.dancaai.app.AngleCalculator
 import com.dancaai.app.OverlayView
 import com.dancaai.app.PoseLandmarkerHelper
+import com.dancaai.app.PostureResult
 import com.dancaai.app.PostureValidator
 import com.dancaai.app.StepCounter
+import com.dancaai.app.WeightInfo
+import com.dancaai.app.WeightLeg
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -24,8 +27,8 @@ import java.util.concurrent.Executors
  * ângulos e postura). Reaproveita o código de visão existente e é embutida na
  * tela de Treino (Compose) via AndroidView.
  *
- * O cálculo de scores (Postura/Ritmo) ainda é mockado no HUD — esta view entrega
- * o feed real da câmera e o overlay de pose; a pontuação real virá depois.
+ * Entrega o feed da câmera, o overlay de pose e os eventos dos módulos de análise
+ * (postura, transferência de peso e o instante de cada transição) para o HUD.
  */
 class PoseCameraView @JvmOverloads constructor(
     context: Context,
@@ -52,6 +55,21 @@ class PoseCameraView @JvmOverloads constructor(
     /** Notifica se há (ou não) uma pessoa detectada no enquadramento. */
     var onPersonDetected: ((Boolean) -> Unit)? = null
 
+    /**
+     * Resultado do módulo de postura a cada frame, incluindo [PostureResult.Unknown]
+     * quando não há pose válida. É o que alimenta o HUD e o acumulador da sessão.
+     */
+    var onPostureResult: ((PostureResult) -> Unit)? = null
+
+    /**
+     * Instante de cada troca de perna de apoio, na base de SystemClock.uptimeMillis,
+     * carimbado na captura do frame — é a entrada do módulo de ritmo.
+     */
+    var onWeightTransition: ((leg: WeightLeg, atUptimeMs: Long) -> Unit)? = null
+
+    /** Estado corrente do módulo de transferência de peso (contadores acumulados). */
+    var onWeightInfo: ((WeightInfo) -> Unit)? = null
+
     /** Último frame de landmarks detectado; null quando nenhuma pessoa está no enquadramento. */
     var currentLandmarks: List<NormalizedLandmark>? = null
         private set
@@ -66,7 +84,10 @@ class PoseCameraView @JvmOverloads constructor(
     init {
         addView(previewView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(overlayView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        stepCounter.onWeightInfoChanged = { info -> overlayView.updateWeightInfo(info) }
+        // O painel de peso agora é desenhado pelo HUD em Compose; a OverlayView
+        // cuida apenas do que precisa estar ancorado no corpo.
+        stepCounter.onWeightInfoChanged = { info -> onWeightInfo?.invoke(info) }
+        stepCounter.onWeightTransition = { leg, at -> onWeightTransition?.invoke(leg, at) }
     }
 
     fun bind(owner: LifecycleOwner) {
@@ -134,16 +155,24 @@ class PoseCameraView @JvmOverloads constructor(
                 imageHeight = resultBundle.inputImageHeight,
                 isFrontCamera = isFrontCamera,
             )
-            stepCounter.process(resultBundle.results)
+            // o instante da captura, e não o da inferência, é o que o ritmo precisa
+            stepCounter.process(resultBundle.results, resultBundle.frameTimeMs)
             val landmarks = resultBundle.results.landmarks()
             val hasPerson = landmarks.isNotEmpty()
             onPersonDetected?.invoke(hasPerson)
             currentLandmarks = if (hasPerson) landmarks[0] else null
-            if (hasPerson) {
+
+            // Sem pessoa no enquadramento o módulo não avalia nada, mas o HUD
+            // precisa saber disso — daí o Unknown explícito em vez de silêncio.
+            val posture = if (hasPerson) {
                 val first = landmarks[0]
                 AngleCalculator.compute(first)?.let { overlayView.updateAngles(it) }
-                overlayView.updatePosture(PostureValidator.validate(first))
+                PostureValidator.validate(first)
+            } else {
+                PostureResult.Unknown
             }
+            overlayView.updatePosture(posture)
+            onPostureResult?.invoke(posture)
         }
     }
 
