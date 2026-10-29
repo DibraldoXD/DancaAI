@@ -38,6 +38,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +53,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,13 +70,20 @@ import com.dancaai.app.PostureResult
 import com.dancaai.app.PostureValidator
 import com.dancaai.app.WeightInfo
 import com.dancaai.app.WeightLeg
+import android.os.SystemClock
+import com.dancaai.app.analysis.MovementRecorder
 import com.dancaai.app.analysis.SessionAccumulator
 import com.dancaai.app.camera.PoseCameraView
+import com.dancaai.app.data.model.CaptureGroup
+import com.dancaai.app.data.model.CaptureLabel
+import com.dancaai.app.data.model.CaptureMeta
 import com.dancaai.app.data.model.RhythmJudgement
 import com.dancaai.app.data.model.RhythmTiming
 import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.data.model.SessionMetrics
 import com.dancaai.app.export.SheetsUploader
+import com.dancaai.app.ui.components.CaptureLabelPicker
+import com.dancaai.app.ui.components.CaptureLabelPill
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.MetronomeControl
@@ -208,6 +218,20 @@ fun TrainingScreen(
     val snapshots = remember { mutableStateListOf<DebugSnapshot>() }
     var showDebugResults by remember { mutableStateOf(false) }
 
+    // ── Seletor de coleta: o que está sendo gravado agora ──
+    // O rótulo escolhido aqui é o valor que vai para a coluna Rotulo da planilha
+    // e é lido direto pelos scripts de treino — ver CaptureLabel.
+    var captureLabel by remember { mutableStateOf(CaptureLabel()) }
+    var showLabelPicker by remember { mutableStateOf(false) }
+
+    // ── Gravação de movimento: amostra a intervalo fixo enquanto ativa ──
+    // Um toque avulso registra uma pose; um passo só se distingue de outro pela
+    // trajetória, daí a gravação contínua por tempo (ver MovementRecorder).
+    val movementRecorder = remember { MovementRecorder() }
+    var recordingMovement by remember { mutableStateOf(false) }
+    var recordedSamples by remember { mutableIntStateOf(0) }
+    var recordingElapsedMs by remember { mutableLongStateOf(0L) }
+
     // ── Saída ao vivo dos módulos de análise ──
     val accumulator = remember { SessionAccumulator() }
     var postureResult by remember { mutableStateOf<PostureResult>(PostureResult.Unknown) }
@@ -220,6 +244,7 @@ fun TrainingScreen(
     // acumulando durante a pausa ou usando o compasso antigo.
     val pausedState = rememberUpdatedState(paused)
     val configState = rememberUpdatedState(config)
+    val captureLabelState = rememberUpdatedState(captureLabel)
 
     // Encerrar com capturas pendentes abre primeiro a revisão de debug; sem elas,
     // fecha a sessão direto. Vale tanto pro botão quanto pro fim do cronômetro.
@@ -236,14 +261,16 @@ fun TrainingScreen(
         if (elapsed >= totalSeconds) finish()
     }
 
-    // captura landmarks atuais com o rótulo dado, guarda localmente e envia pro Sheets
-    // (se configurado — SheetsUploader.upload() é no-op silencioso sem a URL).
-    fun captureAndUpload(label: String) {
-        cameraViewRef.value?.currentLandmarks?.let { lm ->
-            val snap = lm.toSnapshot(label)
-            snapshots.add(snap)
-            SheetsUploader.upload(coroutineScope, snap.toSheetRow())
-        }
+    // captura landmarks atuais com o rótulo armado no seletor, guarda localmente e
+    // envia pro Sheets (se configurado — SheetsUploader.upload() é no-op silencioso
+    // sem a URL). [meta] distingue toque avulso, captura contínua e gravação de
+    // movimento. Devolve false quando não havia pose no enquadramento.
+    fun captureAndUpload(meta: CaptureMeta? = null): Boolean {
+        val lm = cameraViewRef.value?.currentLandmarks ?: return false
+        val snap = lm.toSnapshot(captureLabelState.value.token(meta))
+        snapshots.add(snap)
+        SheetsUploader.upload(coroutineScope, snap.toSheetRow())
+        return true
     }
 
     // ── Metrônomo: motor de áudio + estado da UI (play manual, BPM vindo da config) ──
@@ -269,7 +296,7 @@ fun TrainingScreen(
             }
             when {
                 continuousCapturing -> {
-                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${labels[idx]}")
+                    captureAndUpload(CaptureMeta.Beat(continuousCycleCount, labels[idx]))
                     if (idx == labels.lastIndex) continuousCapturing = false
                 }
                 continuousArmed && idx == 0 -> {
@@ -277,7 +304,7 @@ fun TrainingScreen(
                     continuousArmed = false
                     continuousCapturing = true
                     continuousCycleCount++
-                    captureAndUpload("Contínua #$continuousCycleCount — Tempo ${labels[idx]}")
+                    captureAndUpload(CaptureMeta.Beat(continuousCycleCount, labels[idx]))
                 }
             }
         }
@@ -290,6 +317,35 @@ fun TrainingScreen(
     // silencia o metrônomo quando a sessão é pausada, sem perder o BPM/estado "estava tocando"
     LaunchedEffect(paused) {
         if (paused) metronome.stop() else if (metronomePlaying) metronome.start()
+    }
+    // O relógio da gravação corre independente dos frames de pose: se dependesse
+    // deles, sair do enquadramento congelaria o cronômetro e esconderia o problema.
+    // Tempo correndo com o contador de amostras parado é exatamente o sinal de que
+    // a pessoa saiu do quadro — a leitura mais útil durante a coleta.
+    LaunchedEffect(recordingMovement) {
+        while (recordingMovement) {
+            val now = SystemClock.uptimeMillis()
+            recordingElapsedMs = movementRecorder.elapsedMs(now)
+            movementRecorder.stopIfExpired(now)
+            if (!movementRecorder.isRecording) recordingMovement = false
+            delay(100)
+        }
+    }
+    // trocar o rótulo no meio de uma gravação misturaria dois passos no mesmo
+    // bloco r<n>, que depois não tem como separar
+    LaunchedEffect(captureLabel) {
+        if (movementRecorder.isRecording) {
+            movementRecorder.stop()
+            recordingMovement = false
+        }
+    }
+    // pausar no meio de uma gravação truncaria o passo: encerra a gravação em vez
+    // de deixá-la correndo com um buraco no meio
+    LaunchedEffect(paused) {
+        if (paused && movementRecorder.isRecording) {
+            movementRecorder.stop()
+            recordingMovement = false
+        }
     }
     // se o usuário desligar o metrônomo no meio do processo, desarma a captura contínua
     LaunchedEffect(metronomePlaying) {
@@ -312,6 +368,16 @@ fun TrainingScreen(
                         it.onWeightInfo = { info ->
                             weightInfo = info
                             if (!pausedState.value) accumulator.onWeight(info)
+                        }
+                        it.onPoseFrame = { frameTimeMs ->
+                            if (!pausedState.value && movementRecorder.isRecording) {
+                                movementRecorder.onFrame(frameTimeMs)?.let { meta ->
+                                    captureAndUpload(meta)
+                                }
+                                // reflete também a parada automática no limite de duração
+                                recordingMovement = movementRecorder.isRecording
+                                recordedSamples = movementRecorder.sampleCount
+                            }
                         }
                         it.onWeightTransition = { _, atUptimeMs ->
                             if (!pausedState.value) {
@@ -400,10 +466,44 @@ fun TrainingScreen(
                     if (metronomePlaying) metronome.start() else metronome.stop()
                 },
             )
+            CaptureLabelPill(label = captureLabel, onClick = { showLabelPicker = true })
+            MovementRecordButton(
+                recording = recordingMovement,
+                samples = recordedSamples,
+                elapsedMs = recordingElapsedMs,
+                // Gravar a 10 Hz com um rótulo de postura armado despeja centenas
+                // de amostras de trajetória no dataset de postura, onde elas contam
+                // como poses — exatamente o tipo de erro que só aparece no treino.
+                enabled = captureLabel.subject.group == CaptureGroup.MOVEMENT,
+                onClick = {
+                    if (movementRecorder.isRecording) {
+                        movementRecorder.stop()
+                        recordingMovement = false
+                    } else {
+                        // mesma base de tempo dos frames da câmera (uptimeMillis),
+                        // senão a grade de amostragem nasce deslocada
+                        movementRecorder.start(SystemClock.uptimeMillis())
+                        recordingMovement = true
+                        recordedSamples = 0
+                        recordingElapsedMs = 0L
+                    }
+                },
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 RegisterButton(
                     count = snapshots.size,
-                    onClick = { captureAndUpload("Captura #${snapshots.size + 1}") },
+                    onClick = {
+                        // sem pose no enquadramento a captura não acontece; antes
+                        // disso o toque falhava em silêncio e a linha que faltava
+                        // só apareceria depois, na planilha
+                        if (!captureAndUpload()) {
+                            Toast.makeText(
+                                context,
+                                "Ninguém no enquadramento — nada foi registrado",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
                 )
                 ContinuousCaptureButton(
                     armed = continuousArmed,
@@ -424,6 +524,15 @@ fun TrainingScreen(
         // veil de pausa
         if (paused) {
             PausedVeil(onResume = { paused = false }, onEnd = { finish() })
+        }
+
+        // seletor do rótulo de coleta (sobrepõe a câmera enquanto está aberto)
+        if (showLabelPicker) {
+            CaptureLabelPicker(
+                current = captureLabel,
+                onChange = { captureLabel = it },
+                onDismiss = { showLabelPicker = false },
+            )
         }
 
         // resultados de debug (substitui a tela após encerrar)
@@ -602,6 +711,49 @@ private fun RegisterButton(count: Int, onClick: () -> Unit) {
 }
 
 /**
+ * Gravação de um movimento inteiro: toca para iniciar, executa o passo, toca para
+ * parar. Enquanto ativa, amostra os pontos corporais a 10 Hz ([MovementRecorder]).
+ *
+ * Mostra tempo e número de amostras porque uma gravação curta demais não descreve
+ * a trajetória, e sem o contador não há como perceber isso antes de olhar a
+ * planilha — se a pessoa sair do enquadramento, o tempo corre e as amostras não.
+ */
+@Composable
+private fun MovementRecordButton(
+    recording: Boolean,
+    samples: Int,
+    elapsedMs: Long,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val bg = when {
+        recording -> Color(0xFFEF4444)
+        enabled -> Color.White.copy(alpha = 0.12f)
+        else -> Color.White.copy(alpha = 0.06f)
+    }
+    val label = when {
+        recording -> "■  Gravando  %.1fs · %d".format(elapsedMs / 1000f, samples)
+        enabled -> "●  Gravar movimento"
+        // o texto da pílula não pode quebrar linha; o seletor fica logo acima,
+        // então "um passo" já diz onde escolher
+        else -> "●  Escolha um passo"
+    }
+    val fg = if (enabled || recording) Color.White else Color.White.copy(alpha = 0.35f)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(44.dp)
+            .clip(Shapes.pill)
+            .background(bg)
+            .border(1.dp, Color.White.copy(alpha = if (recording) 0.3f else 0.1f), Shapes.pill)
+            .clickable(enabled = enabled || recording, onClick = onClick)
+            .padding(horizontal = 22.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, color = fg, maxLines = 1)
+    }
+}
+
+/**
  * Captura contínua: sincronizada com o compasso do metrônomo. Ao ativar, avisa que a
  * captura vai acontecer no próximo ciclo (1-2-3-Pausa); quando o ciclo seguinte começa,
  * registra um snapshot em cada um dos 4 tempos. Exige o metrônomo tocando.
@@ -644,6 +796,7 @@ private fun DebugResultsOverlay(snapshots: List<DebugSnapshot>, onClose: () -> U
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xF0141418))
+            .pointerInput(Unit) { detectTapGestures { } } // ver CaptureLabelPicker
             .padding(horizontal = 16.dp),
     ) {
         Spacer(Modifier.height(48.dp))
@@ -751,7 +904,12 @@ private fun EndButton(onEnd: () -> Unit) {
 @Composable
 private fun PausedVeil(onResume: () -> Unit, onEnd: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            // ver CaptureLabelPicker: o véu precisa consumir o toque, senão um tap
+            // nele aciona os botões de captura por baixo com a sessão pausada
+            .pointerInput(Unit) { detectTapGestures { } },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
