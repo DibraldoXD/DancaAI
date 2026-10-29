@@ -62,6 +62,30 @@ for coluna in [c for c in df.columns if c not in COLUNAS_TEXTO]:
         df[coluna].str.replace(",", ".", regex=False), errors="coerce"
     )
 
+# O seletor de coleta do app envia o rótulo como `assunto@angulo` (+ `|c<ciclo>t<tempo>`
+# nas capturas contínuas) — ver CaptureLabel.kt. Separar por "@" devolve o assunto
+# puro; linhas anteriores ao seletor não têm "@" e atravessam sem alteração.
+df["Angulo"] = (
+    df["Rotulo"].str.split("@").str[1].str.split("|").str[0].fillna("nao_informado")
+)
+# Amostras de gravação de movimento (sufixo `|r<n>s<i>t<ms>`) são pontos de uma
+# trajetória a 10 Hz, não poses escolhidas — ver treinar_multilabel.py.
+trajetoria = df["Rotulo"].str.contains(r"\|r\d", regex=True, na=False)
+if trajetoria.any():
+    print(f"Descartadas {int(trajetoria.sum())} amostra(s) de gravação de movimento.")
+df = df[~trajetoria].copy()
+
+df["Rotulo"] = df["Rotulo"].str.split("@").str[0]
+
+# A planilha também recebe coleta de movimento (`mov_*`) e linhas de verificação
+# de envio (`teste`). Elas não são postura e não podem entrar aqui como classe.
+ROTULOS_POSTURA = {"post_boa", "post_ruim_OE", "post_ruim_OD", "post_ruim_OF"}
+fora = df[~df["Rotulo"].isin(ROTULOS_POSTURA)]
+if not fora.empty:
+    print(f"Descartadas {len(fora)} linha(s) que não são de postura:")
+    print(fora["Rotulo"].value_counts().to_string())
+df = df[df["Rotulo"].isin(ROTULOS_POSTURA)].reset_index(drop=True)
+
 # A planilha continua crescendo; a monografia precisa citar uma versão exata.
 # O snapshot congelado é o dataset de referência — a planilha é só a entrada.
 snapshot_name = f"dataset_postura_{datetime.now():%Y%m%d_%H%M}.csv"

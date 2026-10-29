@@ -47,6 +47,39 @@ COLUNAS_TEXTO = ("Timestamp", "Rotulo")
 for coluna in [c for c in df.columns if c not in COLUNAS_TEXTO]:
     df[coluna] = pd.to_numeric(df[coluna].str.replace(",", ".", regex=False), errors="coerce")
 
+# O seletor de coleta do app passou a enviar o rótulo como `assunto@angulo`, com
+# sufixo `|c<ciclo>t<tempo>` nas capturas contínuas (ver CaptureLabel.kt). Separar
+# por "@" devolve o assunto puro e mantém o resto deste script intacto; as linhas
+# anteriores ao seletor não têm "@" e passam por essa separação sem alteração.
+df["Angulo"] = (
+    df["Rotulo"].str.split("@").str[1].str.split("|").str[0].fillna("nao_informado")
+)
+
+# Amostras de gravação de movimento (sufixo `|r<n>s<i>t<ms>`) são pontos de uma
+# trajetória a 10 Hz, não poses escolhidas. Centenas delas num mesmo bloco não
+# são exemplos independentes de postura: entrariam como peso enorme numa única
+# pose e dominariam o treino. Ficam de fora aqui, independentemente do rótulo.
+trajetoria = df["Rotulo"].str.contains(r"\|r\d", regex=True, na=False)
+if trajetoria.any():
+    print(f"\nDescartadas {int(trajetoria.sum())} amostra(s) de gravação de movimento.")
+df = df[~trajetoria].copy()
+
+df["Rotulo"] = df["Rotulo"].str.split("@").str[0]
+
+print("\nCapturas por ângulo de câmera:")
+print(df["Angulo"].value_counts().to_string())
+
+# A planilha é compartilhada com a coleta de movimento (`mov_*`) e com linhas de
+# verificação de envio (`teste`). O alvo abaixo é montado só por match positivo
+# nos desvios, então qualquer linha não-postura entraria como "postura boa" — sem
+# erro e sem aviso. O filtro tem que ser explícito.
+ROTULOS_POSTURA = {"post_boa", "post_ruim_OE", "post_ruim_OD", "post_ruim_OF"}
+fora = df[~df["Rotulo"].isin(ROTULOS_POSTURA)]
+if not fora.empty:
+    print(f"\nDescartadas {len(fora)} linha(s) que não são de postura:")
+    print(fora["Rotulo"].value_counts().to_string())
+df = df[df["Rotulo"].isin(ROTULOS_POSTURA)].reset_index(drop=True)
+
 snapshot = f"dataset_postura_{datetime.now():%Y%m%d_%H%M}.csv"
 df.to_csv(snapshot, index=False)
 print(f"Snapshot: {snapshot}")
