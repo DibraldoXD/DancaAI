@@ -111,6 +111,42 @@ shoulderSpan, zDiff, thresholdOmbrosEncurvados
 
 O Apps Script do lado do Google precisa esperar exatamente essas colunas, nessa ordem — se a URL não estiver funcionando, confira primeiro se o script ainda está publicado com acesso "Qualquer pessoa" e se aceita esse formato de `values`.
 
+#### Seletor do que está sendo gravado
+
+A coluna `label` (`Rotulo` na planilha) não é mais descritiva: ela carrega o rótulo de treino, escolhido no seletor da tela de Treino (pílula "GRAVANDO", acima dos botões de captura). Antes do seletor o app mandava `"Captura #1"` e os rótulos de verdade eram digitados à mão na planilha depois da coleta — origem de erro silencioso, já que uma linha mal rotulada só aparece no treino.
+
+O formato é `assunto@angulo`, com sufixo `|c<ciclo>t<tempo>` nas capturas contínuas. Os valores vêm de [`CaptureLabel.kt`](app/src/main/java/com/dancaai/app/data/model/CaptureLabel.kt):
+
+| Assunto | Token | | Ângulo | Token |
+|---|---|---|---|---|
+| Postura boa | `post_boa` | | Frente | `frente` |
+| Ombro esq. caído | `post_ruim_OE` | | Lado E | `lado_E` |
+| Ombro dir. caído | `post_ruim_OD` | | Lado D | `lado_D` |
+| Ombros à frente | `post_ruim_OF` | | Costas | `costas` |
+| Balanço | `mov_balanco` | | | |
+| Base 1 / Base 2 | `mov_base1` / `mov_base2` | | | |
+| Abertura | `mov_abertura` | | | |
+| Giro invertido (Base 3) | `mov_giro_invertido` | | | |
+| Giro em linha (Base 4 / 5 pisadas) | `mov_giro_linha` | | | |
+| Teste de envio | `teste` | | | |
+
+Exemplos: `post_ruim_OF@lado_D`, `mov_base1@frente|c3t2` (3º ciclo do metrônomo, 2º tempo do compasso).
+
+#### Gravação de movimento
+
+O botão "Registrar" captura **um instante**. Um passo de forró não se distingue de outro por uma pose isolada — balanço, giro invertido e giro em linha passam pelas mesmas poses em momentos diferentes; o que separa os três é a trajetória. Para isso existe o botão **"Gravar movimento"**: toca para iniciar, executa o passo, toca para parar.
+
+- Amostra a **10 Hz** ([`MovementRecorder.kt`](app/src/main/java/com/dancaai/app/analysis/MovementRecorder.kt)). 30 Hz geraria ~120 requisições num passo de 4 s, e o Apps Script recebe uma linha por POST.
+- Cada amostra vira uma linha com sufixo `|r<gravação>s<índice>t<ms>`, por exemplo `mov_giro_linha@frente|r2s014t0467`. O tempo decorrido vai junto do índice porque frames sem pessoa no enquadramento não viram amostra: é o salto no tempo que revela o buraco.
+- Só habilita com um **passo** selecionado. Gravar a 10 Hz com rótulo de postura despejaria centenas de amostras de trajetória no dataset de postura, onde contariam como poses.
+- Para sozinha aos **30 s** e ao pausar a sessão ou trocar o rótulo, para não misturar dois passos no mesmo bloco `r<n>`.
+
+Os scripts de postura descartam toda linha com sufixo `|r<n>`: são pontos de trajetória, não poses escolhidas, e centenas delas no mesmo bloco dominariam o treino.
+
+Os tokens de postura são exatamente os que os scripts de `modelo_postura/` esperam na coluna `Rotulo`; **renomear um token aqui desalinha o dataset já coletado**. Os scripts separam o assunto do ângulo por `@` logo após carregar o CSV, então linhas antigas (anteriores ao seletor, sem `@`) continuam válidas e entram como ângulo `nao_informado`.
+
+Como a mesma planilha recebe postura, movimento e verificação, os scripts de postura filtram `Rotulo` pelos quatro tokens `post_*` antes de montar o alvo. Sem esse filtro, uma linha `mov_*` ou `teste` entraria como **exemplo de postura boa** — o alvo é montado só por match positivo nos desvios, então o que não casa com nenhum é tratado como postura correta, sem erro e sem aviso.
+
 ### Testes
 
 ```bash
