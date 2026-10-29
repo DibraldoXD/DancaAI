@@ -70,6 +70,14 @@ class PoseCameraView @JvmOverloads constructor(
     /** Estado corrente do módulo de transferência de peso (contadores acumulados). */
     var onWeightInfo: ((WeightInfo) -> Unit)? = null
 
+    /**
+     * Um disparo por frame com pose válida, carimbado no instante da captura
+     * (base de SystemClock.uptimeMillis). É o relógio da gravação de movimento:
+     * amostrar pelo tempo do frame, e não pelo do callback, evita que o jitter
+     * da inferência entre na grade temporal das amostras.
+     */
+    var onPoseFrame: ((frameTimeMs: Long) -> Unit)? = null
+
     /** Último frame de landmarks detectado; null quando nenhuma pessoa está no enquadramento. */
     var currentLandmarks: List<NormalizedLandmark>? = null
         private set
@@ -173,6 +181,9 @@ class PoseCameraView @JvmOverloads constructor(
             }
             overlayView.updatePosture(posture)
             onPostureResult?.invoke(posture)
+            // depois de currentLandmarks já estar atualizado: quem ouve este
+            // callback captura o frame corrente, não o anterior
+            if (hasPerson) onPoseFrame?.invoke(resultBundle.frameTimeMs)
         }
     }
 
