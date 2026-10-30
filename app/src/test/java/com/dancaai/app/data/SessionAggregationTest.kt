@@ -47,6 +47,22 @@ class SessionAggregationTest {
         assertEquals(0, sessionsAt(2, 3, 4).streakDays())
     }
 
+    // ─────────────────────────── estilo mais treinado ───────────────────────────
+
+    @Test
+    fun `sem sessoes nao ha estilo mais treinado`() {
+        assertNull(emptyList<SessionEntity>().mostTrainedStyleId())
+    }
+
+    @Test
+    fun `estilo mais treinado e o mais frequente no historico`() {
+        val sessions = sessionsAt(0, 1, 2).mapIndexed { index, session ->
+            session.copy(styleId = if (index == 0) "zouk" else DanceCatalog.FORRO_ID)
+        }
+
+        assertEquals(DanceCatalog.FORRO_ID, sessions.mostTrainedStyleId())
+    }
+
     // ────────────────────────── variação percentual ──────────────────────────
 
     @Test

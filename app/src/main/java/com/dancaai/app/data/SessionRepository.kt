@@ -9,13 +9,16 @@ import com.dancaai.app.data.local.UserSettings
 import com.dancaai.app.data.model.HistorySummary
 import com.dancaai.app.data.model.HomeSummary
 import com.dancaai.app.data.model.ModuleScores
+import com.dancaai.app.data.model.ProfileSummary
 import com.dancaai.app.data.model.RhythmMetrics
 import com.dancaai.app.data.model.Session
 import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.data.model.SessionMetrics
 import com.dancaai.app.data.model.SessionOutcome
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -29,6 +32,7 @@ import kotlin.math.roundToInt
  */
 class SessionRepository(context: Context) {
 
+    private val appContext = context.applicationContext
     private val dao = DancaDatabase.get(context).sessionDao()
     private val preferences = UserPreferences(context)
 
@@ -44,6 +48,12 @@ class SessionRepository(context: Context) {
         combine(dao.observeAll(), preferences.settings) { entities, user ->
             entities.toHomeSummary(user)
         }
+
+    /** O tamanho do banco é lido do disco, daí o [Dispatchers.IO]. */
+    val profile: Flow<ProfileSummary> =
+        combine(dao.observeAll(), preferences.settings) { entities, user ->
+            entities.toProfileSummary(user, databaseSizeBytes())
+        }.flowOn(Dispatchers.IO)
 
     /** Grava a sessão recém-encerrada e devolve o id gerado. */
     suspend fun saveSession(
@@ -93,6 +103,16 @@ class SessionRepository(context: Context) {
 
     suspend fun setVoiceFeedbackEnabled(enabled: Boolean) =
         preferences.setVoiceFeedbackEnabled(enabled)
+
+    /**
+     * Espaço ocupado pelo histórico, somando os arquivos auxiliares do SQLite: o
+     * WAL sozinho pode ser maior que o `.db`, e ignorá-lo subestimaria o total que
+     * o usuário apaga ao limpar o histórico.
+     */
+    private fun databaseSizeBytes(): Long =
+        listOf("", "-wal", "-shm").sumOf { suffix ->
+            appContext.getDatabasePath(DancaDatabase.NAME + suffix).length()
+        }
 }
 
 // ─────────────────────────── mapeamento e agregação ───────────────────────────
@@ -224,6 +244,29 @@ private fun List<SessionEntity>.toHomeSummary(user: UserSettings): HomeSummary {
         streakDays = streakDays(),
     )
 }
+
+private fun List<SessionEntity>.toProfileSummary(
+    user: UserSettings,
+    storageBytes: Long,
+): ProfileSummary = ProfileSummary(
+    name = user.name,
+    initial = user.initial,
+    level = DanceCatalog.levelLabel(user.levelId),
+    favoriteStyle = DanceCatalog.styleById(mostTrainedStyleId() ?: DanceCatalog.FORRO_ID).name,
+    sessionsCount = size,
+    streakDays = streakDays(),
+    vibrationEnabled = user.vibrationEnabled,
+    voiceFeedbackEnabled = user.voiceFeedbackEnabled,
+    storageBytes = storageBytes,
+)
+
+/**
+ * Estilo mais treinado no histórico; nulo sem sessões. Hoje o catálogo só tem
+ * forró, mas derivar do histórico em vez de fixar o nome evita que o perfil
+ * minta no dia em que um segundo estilo entrar.
+ */
+internal fun List<SessionEntity>.mostTrainedStyleId(): String? =
+    groupingBy { it.styleId }.eachCount().maxByOrNull { it.value }?.key
 
 /** Dias consecutivos com pelo menos um treino. A sequência só vale se houve treino hoje ou ontem. */
 internal fun List<SessionEntity>.streakDays(): Int {

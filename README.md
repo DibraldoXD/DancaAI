@@ -30,23 +30,24 @@ O app se organiza em quatro pilares, descritos no plano de trabalho:
 
 **Ritmo**
 - Metrônomo configurável (BPM, 60–200) com motor de áudio próprio via `AudioTrack` — scheduling orientado a amostras (sem drift de tempo), compasso fixo de 4 tempos com tique diferenciado na pausa/quebra, BPM persistido entre sessões ([`Metronome.kt`](app/src/main/java/com/dancaai/app/audio/Metronome.kt))
+- Sincronização ritmo × transferência de peso: cada troca de perna de apoio é julgada contra a grade de batidas do metrônomo (no tempo / adiantado / atrasado, com o desvio em ms), com os dois relógios na mesma base e o instante *audível* do tique estimado pela posição de reprodução ([`RhythmAnalyzer.kt`](app/src/main/java/com/dancaai/app/analysis/RhythmAnalyzer.kt))
 
 **App e design**
-- Telas em Jetpack Compose: Onboarding, Home, Nova Sessão, Treino, Resultados, Histórico, Perfil ([`ui/screens`](app/src/main/java/com/dancaai/app/ui/screens))
+- Telas em Jetpack Compose: Onboarding, Home, Nova Sessão, Treino, Resultados, Histórico, Detalhe de sessão, Perfil ([`ui/screens`](app/src/main/java/com/dancaai/app/ui/screens))
 - Design system próprio (cores, tipografia, componentes reutilizáveis) ([`ui/theme`](app/src/main/java/com/dancaai/app/ui/theme), [`ui/components`](app/src/main/java/com/dancaai/app/ui/components))
 - Navegação entre telas ([`DancaApp.kt`](app/src/main/java/com/dancaai/app/navigation/DancaApp.kt))
+- Persistência real: histórico de sessões em Room e perfil/preferências em DataStore — nome, nível, contagem de sessões, sequência de dias e espaço ocupado vêm todos dos dados gravados ([`SessionRepository.kt`](app/src/main/java/com/dancaai/app/data/SessionRepository.kt))
 
 ## O que ainda falta desenvolver
 
-- **Sincronização ritmo × passo**: comparar o timing dos tiques do metrônomo com os eventos de transferência de peso pra gerar um score de ritmo real (hoje os dois módulos existem separadamente, mas não conversam entre si)
 - **Reconhecimento de movimentos**: classificação dos passos do forró (Balanço, Base 1/2, Abertura, Giros) via modelo embarcado treinado com vídeos de dançarinos — ainda não implementado
 - **Modos Livre e Desafio** da execução de movimentos
-- **DTW (Dynamic Time Warping)**: comparação da sequência executada pelo usuário com um template de referência
 - **Templates de referência**: gravação/carregamento de movimentos de instrutores
-- **Scoring real de sessão**: os scores exibidos em Resultados/Histórico ainda são mockados ([`MockRepository.kt`](app/src/main/java/com/dancaai/app/data/MockRepository.kt))
+- **Pontuação de sessão**: as telas mostram as medições brutas (proporção de tempo em postura conforme, de trocas corretas, desvio médio de ritmo), não uma nota de 0 a 100. A fórmula de score depende da calibração com praticantes; como o banco guarda só as medições, ela valerá retroativamente para as sessões já gravadas. Até lá, "Score médio" na Home e a média de 30 dias no Histórico ficam em branco
 - **Modelo de classificação de postura**: hoje a postura é validada por regras geométricas; o plano prevê complementar com um modelo embarcado treinado
-- Migração de telas com estado mais complexo (ex. `TrainingScreen`) para `ViewModel`
-- Unificação das constantes de threshold de postura, hoje duplicadas entre `PostureValidator.kt`, `OverlayView.kt` e `TrainingScreen.kt`
+- **Guia de enquadramento no app**: [`CameraGuide.kt`](app/src/main/java/com/dancaai/dancaai/CameraGuide.kt) está implementado, mas só é usado pela `MainActivity` de protótipo, que não é alcançável pela interface
+- **Vibração e feedback por voz**: as preferências são persistidas no Perfil, mas a sessão de treino ainda não as consome
+- Migração de telas com estado mais complexo (ex. `TrainingScreen`) para `ViewModel`, com o aparato de coleta de dataset atrás de um "modo coleta"
 
 ## Stack técnica
 
@@ -64,7 +65,8 @@ app/src/main/java/com/dancaai/
 ├── app/
 │   ├── audio/            # Metrônomo (motor de áudio + persistência)
 │   ├── camera/           # Integração CameraX + MediaPipe
-│   ├── data/              # Modelos e repositório mockado
+│   ├── analysis/          # Acumulador de sessão, ritmo, gravação de movimento
+│   ├── data/              # Modelos, repositório, Room e DataStore
 │   ├── navigation/        # Rotas e grafo de navegação Compose
 │   └── ui/
 │       ├── components/    # Design system (botões, cards, chips...)
