@@ -1,6 +1,7 @@
 package com.dancaai.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,10 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,8 +31,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dancaai.app.data.model.HistorySummary
 import com.dancaai.app.ui.components.DcaCard
-import com.dancaai.app.ui.components.DcaIconButton
 import com.dancaai.app.ui.components.DcaTopBar
+import com.dancaai.app.ui.components.EmojiTile
 import com.dancaai.app.ui.components.HistoryBars
 import com.dancaai.app.ui.components.ScoreInline
 import com.dancaai.app.ui.history.HistoryViewModel
@@ -38,6 +41,7 @@ import com.dancaai.app.ui.theme.MonoFontFamily
 
 @Composable
 fun HistoryScreen(
+    onOpenSession: (sessionId: Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HistoryViewModel = viewModel(),
 ) {
@@ -45,10 +49,7 @@ fun HistoryScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxSize().background(colors.bg)) {
-        DcaTopBar(
-            title = "Histórico",
-            actions = { DcaIconButton(Icons.Rounded.Tune, "Filtros", onClick = {}) },
-        )
+        DcaTopBar(title = "Histórico")
 
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
             state.summary?.let { summary ->
@@ -63,7 +64,10 @@ fun HistoryScreen(
 
             items(state.sessions, key = { it.id }) { session ->
                 Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp)) {
-                    DcaCard(padding = 14) {
+                    DcaCard(
+                        padding = 14,
+                        modifier = Modifier.clickable { onOpenSession(session.id) },
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -84,6 +88,12 @@ fun HistoryScreen(
                             ScoreInline("P", session.scores.posture)
                             Spacer(Modifier.padding(horizontal = 5.dp))
                             ScoreInline("R", session.scores.rhythm)
+                            Icon(
+                                Icons.Rounded.ChevronRight,
+                                contentDescription = null,
+                                tint = colors.onSurfaceDim,
+                                modifier = Modifier.padding(start = 4.dp).size(20.dp),
+                            )
                         }
                     }
                 }

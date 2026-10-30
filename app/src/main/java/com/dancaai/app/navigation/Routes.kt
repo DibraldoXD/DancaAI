@@ -17,6 +17,12 @@ object Routes {
     const val TRAINING = "training"
     const val RESULTS = "results"
 
+    /** Detalhe de uma sessão já gravada, aberto a partir do Histórico. */
+    const val SESSION_ID_ARG = "sessionId"
+    const val SESSION_DETAIL = "session_detail/{$SESSION_ID_ARG}"
+
+    fun sessionDetail(sessionId: Long): String = "session_detail/$sessionId"
+
     /** Rotas de nível superior que exibem a barra de navegação inferior. */
     val topLevel = setOf(HOME, HISTORY, PROFILE)
 }

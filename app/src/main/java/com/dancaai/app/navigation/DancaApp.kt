@@ -20,6 +20,8 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -33,6 +35,7 @@ import com.dancaai.app.ui.screens.HomeScreen
 import com.dancaai.app.ui.screens.OnboardingScreen
 import com.dancaai.app.ui.screens.ProfileScreen
 import com.dancaai.app.ui.screens.ResultsScreen
+import com.dancaai.app.ui.screens.SessionDetailScreen
 import com.dancaai.app.ui.screens.SessionScreen
 import com.dancaai.app.ui.screens.TrainingScreen
 import com.dancaai.app.ui.session.SessionFlowViewModel
@@ -117,8 +120,19 @@ private fun DancaNavigation(
                 )
             }
 
-            composable(Routes.HISTORY) { HistoryScreen() }
+            composable(Routes.HISTORY) {
+                HistoryScreen(
+                    onOpenSession = { id -> navController.navigate(Routes.sessionDetail(id)) },
+                )
+            }
             composable(Routes.PROFILE) { ProfileScreen() }
+
+            composable(
+                route = Routes.SESSION_DETAIL,
+                arguments = listOf(navArgument(Routes.SESSION_ID_ARG) { type = NavType.LongType }),
+            ) {
+                SessionDetailScreen(onBack = { navController.popBackStack() })
+            }
 
             sessionFlow(navController)
         }

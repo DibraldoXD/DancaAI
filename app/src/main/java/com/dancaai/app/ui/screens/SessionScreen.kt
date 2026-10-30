@@ -40,6 +40,7 @@ import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.ui.components.DcaCard
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaTopBar
+import com.dancaai.app.ui.components.EmojiTile
 import com.dancaai.app.ui.components.SectionLabel
 import com.dancaai.app.ui.components.navigationBarsOrMinPadding
 import com.dancaai.app.ui.theme.DcaTheme

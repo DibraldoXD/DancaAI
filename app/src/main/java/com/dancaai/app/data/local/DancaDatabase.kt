@@ -11,6 +11,13 @@ abstract class DancaDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
 
     companion object {
+        /**
+         * Nome do arquivo do banco. Exposto porque o Perfil mostra o espaço que o
+         * histórico ocupa, e precisa localizar o arquivo (e os auxiliares do
+         * SQLite) sem repetir a string.
+         */
+        const val NAME = "danca.db"
+
         @Volatile
         private var instance: DancaDatabase? = null
 
@@ -19,7 +26,7 @@ abstract class DancaDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     DancaDatabase::class.java,
-                    "danca.db",
+                    NAME,
                 ).build().also { instance = it }
             }
     }

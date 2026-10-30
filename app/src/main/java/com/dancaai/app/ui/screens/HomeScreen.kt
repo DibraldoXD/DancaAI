@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dancaai.app.data.model.HomeSummary
 import com.dancaai.app.data.model.Session
 import com.dancaai.app.ui.components.DcaCard
-import com.dancaai.app.ui.components.DcaIconButton
+import com.dancaai.app.ui.components.EmojiTile
 import com.dancaai.app.ui.components.LineAreaChart
 import com.dancaai.app.ui.components.ScoreInline
 import com.dancaai.app.ui.components.SectionLabel
@@ -81,7 +80,6 @@ fun HomeScreen(
                     color = colors.onSurface,
                 )
             }
-            DcaIconButton(Icons.Rounded.Notifications, "Notificações", onClick = {})
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -263,15 +261,5 @@ private fun HeroCard(streakDays: Int, onStart: () -> Unit) {
                 }
             }
         }
-    }
-}
-
-@Composable
-internal fun EmojiTile(emoji: String, sizeDp: Int) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.size(sizeDp.dp).clip(Shapes.md).background(DcaTheme.colors.surface2),
-    ) {
-        Text(emoji, fontSize = (sizeDp * 0.46).sp)
     }
 }
