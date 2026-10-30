@@ -99,8 +99,15 @@ As seções 1–4 regem o auxílio na escrita acadêmica (TCC01/TCC02). Esta se�
 - Nunca presumir que uma API do MediaPipe/AndroidX/Compose existe ou se comporta de certa forma — conferir contra a versão travada em `app/build.gradle.kts`/`gradle/libs.versions.toml` antes de usar.
 
 **Prioridades atuais** (lacunas identificadas em relação ao plano de trabalho do TCC)
-- Ritmo/beat: metrônomo configurável (BPM + tipo de batida) e, depois, sincronização com a transferência de peso.
-- Scoring real de sessão (hoje mockado em `TrainingScreen`/`MockRepository`).
-- Unificar as constantes de threshold de postura hoje duplicadas entre `PostureValidator.kt`, `OverlayView.kt` e `TrainingScreen.kt`.
+
+Concluídos: metrônomo configurável (BPM + tipo de batida), sincronização ritmo × transferência de peso, unificação dos thresholds de postura, e o Perfil lendo dados reais (nada mais vem de repositório mockado).
+
+Em ordem:
+- **Modo coleta**: switch no Perfil que liga o aparato de coleta de dataset, hoje sempre visível no Treino. Exige extrair o painel do `TrainingScreen` e migrá-lo para `TrainingViewModel`.
+- **Guia de enquadramento**: expor o `CameraGuide`, hoje inalcançável, no Treino e numa tela de posicionamento.
+- **Ritmo na sessão**: metrônomo opcionalmente automático ao iniciar, vibração no beat (consumindo a preferência já persistida) e tolerância de ritmo configurável e gravada na sessão.
+- **Modelo embarcado de postura**: treinar com o dataset coletado, exportar TFLite e usar como validação complementar às regras geométricas.
+- **Execução de movimentos**: dataset → modelo TFLite de sequência → classificador embarcado → modos Livre e Desafio.
+- **Pontuação de sessão**: bloqueada até a calibração com praticantes. Derivada das medições na leitura, para valer também nas sessões já gravadas.
 
 
