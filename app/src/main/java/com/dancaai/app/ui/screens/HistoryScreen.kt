@@ -160,5 +160,14 @@ private fun MonthlyCard(summary: HistorySummary) {
         }
         Spacer(Modifier.height(14.dp))
         HistoryBars(summary.bars)
+        // Sem nota, o travessão e a faixa de presença não se explicam sozinhos.
+        if (summary.average == null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Dias treinados. A média aparece quando as sessões tiverem pontuação.",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.onSurfaceDim,
+            )
+        }
     }
 }

@@ -89,24 +89,41 @@ fun LineAreaChart(
     }
 }
 
-/** Barras de atividade (histórico de 30 dias). 0 = dia sem treino. */
+/**
+ * Barras de atividade (histórico de 30 dias). 0 = dia sem treino.
+ *
+ * Enquanto nenhuma sessão tiver pontuação, todo dia treinado chega aqui como 1
+ * (ver `SessionRepository`), e barras de altura 1 em 100 deixariam 94% de um
+ * gráfico de 64 dp em branco — foi o buraco que apareceu no aparelho. Sem nota
+ * não há o que comparar em altura, então as barras viram uma faixa baixa de
+ * presença: treinou ou não treinou.
+ */
 @Composable
 fun HistoryBars(heights: List<Int>, modifier: Modifier = Modifier) {
     val accent = DcaTheme.colors.accent
     val empty = DcaTheme.colors.surface2
+    val scored = heights.any { it > 1 }
+
     Row(
-        modifier = modifier.fillMaxWidth().height(64.dp),
+        modifier = modifier.fillMaxWidth().height(if (scored) 64.dp else 24.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         heights.forEach { hv ->
-            Canvas(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(if (hv > 0) (hv / 100f).coerceIn(0.06f, 1f) else 0.06f),
-            ) {
+            val trained = hv > 0
+            val fraction = when {
+                !scored -> if (trained) 1f else 0.3f
+                trained -> (hv / 100f).coerceIn(0.06f, 1f)
+                else -> 0.06f
+            }
+            val color = when {
+                !trained -> empty
+                !scored -> accent
+                else -> accent.copy(alpha = 0.4f + (hv / 100f) * 0.6f)
+            }
+            Canvas(modifier = Modifier.weight(1f).fillMaxHeight(fraction)) {
                 drawRoundRect(
-                    color = if (hv > 0) accent.copy(alpha = 0.4f + (hv / 100f) * 0.6f) else empty,
+                    color = color,
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f),
                 )
             }
