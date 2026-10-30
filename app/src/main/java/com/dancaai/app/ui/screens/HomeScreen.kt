@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -139,12 +140,23 @@ private fun LastSessionCard(session: Session) {
                     "${session.styleName} · ${session.durationMin} min",
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(session.date, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVar)
+                Text(
+                    session.date,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVar,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            ScoreInline("Postura", session.scores.posture)
+            // Rótulos curtos, como no Histórico: por extenso, as duas colunas de
+            // score consumiam a largura do título, que quebrava em duas linhas
+            // num aparelho de 1080 px.
+            ScoreInline("P", session.scores.posture)
             Spacer(Modifier.size(10.dp))
-            ScoreInline("Ritmo", session.scores.rhythm)
+            ScoreInline("R", session.scores.rhythm)
         }
     }
 }
