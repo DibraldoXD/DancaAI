@@ -84,6 +84,27 @@ MODELOS_DIR = Path(__file__).parent / "models"
 # a segmentação de participante mudaram desde então).
 ACURACIA_EXPLORATORIA = 0.776
 
+# Calibrar o yaw pelo percentil 95 da gravação, ou usar o sinal cru.
+#
+# O padrão é NÃO calibrar, por dois motivos que se somam.
+#
+# Mecânico: a calibração precisa de uma estatística da gravação INTEIRA, e em
+# tempo de inferência o app não tem isso — ele tem a janela corrente de 3 s de
+# uma execução que ainda não terminou. Qualquer aproximação (percentil da janela,
+# referência do enquadramento inicial) é uma grandeza diferente da que o modelo
+# viu no treino, e divergência treino/inferência não dá erro: dá resposta errada
+# no celular e certa no notebook.
+#
+# Medido: para o modelo que de fato embarca, calibrar não ajuda. Em C@3,0s,
+# `keras/mlp` sai de 0,871 (com) para 0,909 (sem) por janela; o melhor calibrado
+# (`mlp_largo`, 0,892) perde do melhor não calibrado. A floresta ganha 1,8 ponto
+# com calibração (0,959 contra 0,941), mas floresta não converte para TFLite —
+# ela é teto de referência, não candidata a embarcar.
+#
+# `controle_de_calibracao()` continua medindo as duas versões em cada execução,
+# para a escolha permanecer visível em vez de virar folclore.
+CALIBRAR_YAW = False
+
 # Estratégia e duração de janela de cada configuração avaliada. Ver o cabeçalho
 # de features.py para o que cada letra significa.
 CONFIGURACOES = [
@@ -283,7 +304,7 @@ def acuracia_por_participante(meta: pd.DataFrame, predito: np.ndarray) -> pd.Dat
     return pd.DataFrame(linhas)
 
 
-def controle_de_calibracao(mov, duracao: float = 3.0) -> None:
+def controle_de_calibracao(mov, estrategia: str = "B", duracao: float = 3.0) -> None:
     """Mede quanto do resultado depende da calibração do yaw por gravação.
 
     A calibração usa o percentil 95 de |dx| da gravação inteira, incluindo os
@@ -299,13 +320,13 @@ def controle_de_calibracao(mov, duracao: float = 3.0) -> None:
         sinais = features.adicionar_yaw_e_velocidades(
             features.sinais_por_quadro(mov), calibrar=calibrar
         )
-        X, meta = features.montar("B", mov, sinais, duracao)
+        X, meta = features.montar(estrategia, mov, sinais, duracao)
         predito = prever_lopo(X, meta, construir_estimadores()["floresta"])
         real = meta["passo"].to_numpy()
         votos = voto_por_gravacao(meta, predito)
         etiqueta = "com calibração" if calibrar else "SEM calibração (sinal cru)"
         print(
-            f"B@{duracao:.1f}s floresta, {etiqueta:<28}"
+            f"{estrategia}@{duracao:.1f}s floresta, {etiqueta:<28}"
             f"janela {accuracy_score(real, predito):.3f}  "
             f"f1m {f1_score(real, predito, average='macro', zero_division=0):.3f}  "
             f"gravação {accuracy_score(votos['real'], votos['votado']):.3f}"
@@ -516,7 +537,13 @@ def avaliar_keras_lopo(X: pd.DataFrame, meta: pd.DataFrame, arquitetura: str) ->
 
 def main(origem: str | None = None) -> None:
     mov, _ = carregar(origem)
-    sinais = features.adicionar_yaw_e_velocidades(features.sinais_por_quadro(mov))
+    sinais = features.adicionar_yaw_e_velocidades(
+        features.sinais_por_quadro(mov), calibrar=CALIBRAR_YAW
+    )
+    print(
+        f"\nCalibração do yaw: {'LIGADA' if CALIBRAR_YAW else 'DESLIGADA'} "
+        "(ver CALIBRAR_YAW no topo deste arquivo)"
+    )
 
     periodos = features.periodos_por_gravacao(sinais)
     print("\nCiclo estimado por passo (s) — o BPM não está no dataset, ver features.py:")
@@ -561,11 +588,15 @@ def main(origem: str | None = None) -> None:
         print(erradas.to_string(index=False, float_format=lambda v: f"{v:.2f}"))
 
     auditar_par_dificil(mov, sinais, guardadas, melhor)
-    controle_de_calibracao(mov)
 
-    # ─── modelo final: a configuração vencedora, agora em Keras ───
+    # Estratégia vencedora, derivada aqui porque o controle de calibração abaixo
+    # tem de medir a configuração que de fato vai ser exportada, não uma fixa.
     estrategia, janela = melhor.split(" · ")[0].split("@")
     duracao = None if janela == "ciclo" else float(janela.rstrip("s"))
+
+    controle_de_calibracao(mov, estrategia, duracao or 3.0)
+
+    # ─── modelo final: a configuração vencedora, agora em Keras ───
     X_final, meta_final = features.montar(estrategia, mov, sinais, duracao)
 
     print("\n" + "=" * 78)

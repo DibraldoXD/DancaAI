@@ -20,29 +20,30 @@ gravação daquela pessoa.
 |---|---|---|
 | Chute na classe majoritária | 0,208 | — |
 | Teste exploratório anterior a este módulo (janela de 3 s) | 0,776 | — |
-| **Modelo embarcável (TFLite, `keras/mlp_largo`)** | **0,891** | **0,907** (39/43) |
-| Teto medido (random forest, não embarcável) | 0,959 | 1,000 (43/43) |
+| **Modelo embarcável (TFLite, `keras/mlp_largo`)** | **0,939** | **0,953** (41/43) |
+| Teto medido (random forest, não embarcável) | 0,946 | 0,953 (41/43) |
 
-f1 por passo do modelo embarcável: giro invertido 0,99 · balanço 0,95 ·
-base 1 0,90 · base 2 0,88 · giro em linha 0,86 · abertura 0,77.
+f1 por passo do modelo embarcável: giro invertido 1,00 · balanço 0,99 ·
+base 1 0,98 · base 2 0,97 · giro em linha 0,88 · abertura 0,83.
+
+Configuração exportada: janela de 4,5 s com 5 sub-intervalos ordenados (`C@4.5s`),
+**sem calibração do yaw** — ver [A calibração do yaw](#a-calibração-do-yaw-medida-e-descartada).
 
 ### O que nestes números é robusto e o que não é
 
 `train.py` ativa `enable_op_determinism()` do TensorFlow, então **uma execução é
 reproduzível**: mesma entrada, mesma saída. Isso não é o mesmo que estabilidade.
 
-As três arquiteturas Keras comparadas ficam dentro de 1,4 ponto uma da outra
-(0,878 / 0,877 / 0,891 na última execução), e esse intervalo é menor que a
-sensibilidade do treino à **ordem** das janelas. Renomear as chaves de gravação
-— mudança puramente cosmética, que não altera a partição dos participantes —
-trocou a arquitetura vencedora de `mlp` para `mlp_largo`. Determinismo garante
-reprodutibilidade dada a mesma entrada, não invariância à ordem dela.
+As três arquiteturas Keras ficam dentro de 4 pontos uma da outra (0,898 / 0,913
+/ 0,939), e já se viu esse ranking mudar por motivo cosmético: renomear as chaves
+de gravação — que não altera a partição dos participantes — trocou a arquitetura
+vencedora numa execução anterior. Determinismo garante reprodutibilidade dada a
+mesma entrada, não invariância à **ordem** dela.
 
-A conclusão a tirar daqui: **a escolha entre as três arquiteturas não é
-sustentada pelos dados**, e citar uma delas como "a melhor" seria ler ruído. O
-que é robusto, e por margem larga, é a faixa: ~0,88–0,89 fora da amostra contra
-0,776 do teste exploratório e 0,208 do chute. É essa comparação que sustenta a
-atividade A.2.2, não a terceira casa decimal.
+Então trate a escolha da arquitetura como pouco sustentada e a faixa como o
+resultado: **~0,91–0,94 fora da amostra**, contra 0,776 do teste exploratório e
+0,208 do chute. É essa comparação que sustenta a atividade A.2.2, não a terceira
+casa decimal.
 
 **Abertura × giro em linha melhorou de verdade.** Era o par que se confundia
 mutuamente (f1 0,47 e 0,62 no teste exploratório). Um classificador binário só
@@ -61,7 +62,8 @@ na varredura:
    Dividir coordenadas por ele explode as features exatamente nos quadros de
    rotação — que são os quadros que distinguem abertura de giro em linha. O
    comprimento do tronco (quadril → ombro) é aproximadamente invariante à
-   rotação em torno do eixo vertical. Só essa troca levou 0,789 → 0,941.
+   rotação em torno do eixo vertical. Só essa troca levou 0,789 → 0,927 (A → B,
+   floresta, janela de 4,5 s).
 
 2. **Usar o deslocamento de ombros com sinal, não o módulo.** A razão
    `span/tronco` em módulo dobra a curva de rotação no zero: uma rotação suave
@@ -74,27 +76,25 @@ a janela é fatiada em 5 sub-intervalos e cada um entra com as próprias
 estatísticas, na ordem. É o que permite codificar "a rotação continua depois da
 3ª pisada", que é a diferença de domínio entre os dois passos — o giro em linha
 tem 5 pisadas e roda até fechar as 5, a abertura tem 3 marcações e logo vem a
-pausa. Ganho de 0,941 → 0,959 na floresta.
+pausa. Ganho de 0,927 → 0,946 na floresta (B → C).
 
 ### Onde ainda erra
 
-- **A lacuna entre o teto e o embarcável é real: 0,959 contra 0,891.** A floresta
-  ganha por capturar interação entre features ("yaw alto no 4º sub-intervalo E pé
-  fechado no 5º"), e árvore não converte para TFLite sem op custom. O número que
-  vale para o app é **0,891**, não o da floresta. Fechar essa diferença por
-  destilação (treinar a rede nas probabilidades da floresta) é o próximo passo
-  natural e não foi feito aqui.
-- **A abertura segue sendo o ponto fraco.** No modelo embarcável tem f1 0,77, e
-  28 das suas 132 janelas vão para giro em linha; na volta, 24 das 177 janelas de
+- **A lacuna até o teto praticamente fechou: 0,946 contra 0,939.** Com o modelo
+  calibrado essa diferença era de 0,068, e a destilação da floresta para a rede
+  estava listada como próximo passo. Deixou de ser prioridade: não há mais 7
+  pontos a recuperar, há 0,7.
+- **A abertura segue sendo o ponto fraco.** No modelo embarcável tem f1 0,83, e
+  19 das suas 111 janelas vão para giro em linha; na volta, 17 das 153 janelas de
   giro em linha vão para abertura. Esse par concentra quase toda a confusão
   residual — nenhuma janela de abertura ou de giro em linha é confundida com os
   passos rotacionalmente parados (balanço, base 1, base 2).
-- **A pior dobra do LOPO fica bem abaixo da média.** No embarcável, a média de
-  0,891 vem de dobras entre 0,756 e 0,962; no teto, de dobras entre 0,850 e 1,000
-  (desvio 0,053). No binário abertura × giro em linha, dois participantes puxam
-  para baixo: 0,88 e 0,74, contra 0,98–1,00 nos outros cinco. Com 7 pessoas, uma
-  dobra ruim é 14% do resultado — "funciona" e "funciona para quem dança parecido
-  com o treino" não se distinguem ainda.
+- **A dispersão entre dobras caiu, mas 7 pessoas continuam sendo 7 pessoas.** No
+  embarcável a média de 0,939 vem de dobras entre 0,904 e 0,990 — bem mais
+  apertado que os 0,756–0,962 do modelo calibrado, e esse é o sinal mais claro de
+  que a calibração por gravação atrapalhava a generalização. Ainda assim, com 7
+  participantes uma dobra ruim é 14% do resultado, e "funciona" e "funciona para
+  quem dança parecido com o treino" não se distinguem com esta amostra.
 - **A auditoria não encontrou rótulo otimista.** As 14 gravações dos dois passos
   difíceis foram inspecionadas por descritores de domínio (rotação total,
   inversões por segundo, desaceleração no fim). Giro em linha mede 3,0–4,3 rad/s
@@ -104,7 +104,7 @@ pausa. Ganho de 0,941 → 0,959 na floresta.
   inversões/s contra 0,89–1,38 das outras aberturas e um terço do tempo quase
   parada. Parece execução lenta ou hesitante, e vale conferir no vídeo.
 - **Segmentar por ciclo do movimento foi pior que janela de duração fixa**
-  (0,939 contra 0,959). O motivo é que o ciclo tem de ser *estimado* do sinal: o
+  (0,936 contra 0,946). O motivo é que o ciclo tem de ser *estimado* do sinal: o
   BPM da sessão não está no dataset. A estimativa por autocorrelação erra feio em
   algumas gravações (1,6 s e 4,9 s para o mesmo passo). Com o BPM gravado no
   rótulo, essa estratégia passa a usar um valor conhecido e merece nova medição.
@@ -114,8 +114,8 @@ pausa. Ganho de 0,941 → 0,959 na floresta.
 Em ordem de retorno esperado:
 
 1. **Mais participantes.** 7 pessoas, uma execução de cada passo por pessoa. É a
-   limitação dominante: a variação entre dobras (0,85–1,00) é maior que a
-   diferença entre as melhores configurações.
+   limitação dominante: a variação entre dobras (0,90–0,99) continua da mesma
+   ordem que a diferença entre as melhores configurações.
 2. **Gravar o BPM e o participante no rótulo.** O sufixo atual é
    `|r<n>s<i>t<ms>`; `|p<id>r<n>s<i>t<ms>b<bpm>` resolve a segmentação de
    participante na origem (hoje depende de um corte manual por horário) e troca o
@@ -124,8 +124,8 @@ Em ordem de retorno esperado:
 3. **Segunda câmera ou outro ângulo.** Todas as 43 gravações são de frente. A
    rotação é justamente o que uma câmera frontal mede pior, e é o discriminador do
    par difícil.
-4. **Destilação da floresta para a rede**, para recuperar os 0,068 de lacuna
-   entre o teto medido e o que embarca.
+4. **Destilação da floresta para a rede** — hoje de baixo retorno, com a lacuna
+   em 0,007. Só volta à mesa se mais dados reabrirem a diferença.
 
 ## Fluxo de ponta a ponta
 
@@ -178,6 +178,23 @@ Em ordem de retorno esperado:
    Gera `models/movement_classifier.tflite`, confere que o modelo convertido
    responde igual ao Keras e imprime o contrato de integração — a ordem exata das
    entradas e das saídas, que é o que o lado Kotlin precisa reproduzir.
+
+6. **Regerar o vetor-ouro** sempre que o modelo mudar:
+
+   ```bash
+   python vetor_ouro.py
+   ```
+
+   Grava `app/src/test/resources/golden_vector_movimento.txt`, que o
+   `MovementFeaturesTest` do app usa para conferir que o Kotlin monta as 182
+   features na mesma ordem e com as mesmas fórmulas. A janela sai dos metadados
+   do modelo exportado, não de uma constante: quando a configuração vencedora
+   mudou de 3,0 s para 4,5 s, um vetor-ouro de janela fixa continuaria passando e
+   validaria o app contra um tamanho que o modelo não usa mais.
+
+   O vetor-ouro é calculado sobre uma trajetória **sintética**, definida por
+   fórmula. Trinta e tantos quadros de pontos corporais de um participante são
+   dado de pessoa, e este repositório é público.
 
 ## Como o dataset é interpretado
 
@@ -238,19 +255,36 @@ desapareceriam do relatório, sem erro. A lista `CORTES_MANUAIS` é a mesma dos
 scripts de postura e precisa ser mantida em sincronia com eles — os dois leem a
 mesma planilha, e se divergirem passam a discordar sobre quem é quem.
 
-### Calibração do yaw: uma dependência medida, não assumida
+### A calibração do yaw: medida e descartada
 
-O sinal de rotação é calibrado em radianos dividindo `|dx|` pelo percentil 95 da
-própria gravação e aplicando `arcsin`. Isso é calibração não supervisionada — não
-olha o rótulo — mas usa a gravação inteira para normalizar cada quadro dela,
-inclusive quadros que, na validação, estão do lado do teste.
+Havia a opção de calibrar o sinal de rotação em radianos, dividindo `|dx|` pelo
+percentil 95 da própria gravação e aplicando `arcsin`. Ela foi **removida do
+pipeline** (`CALIBRAR_YAW = False` em `train.py`), por duas razões que se somam.
 
-Por isso `train.py` mede as duas versões lado a lado. Resultado: 0,941 com
-calibração contra **0,918 sem** (B@3 s, floresta). A calibração ajuda pouco e não
-sustenta o resultado — a conclusão vale com ou sem ela.
+**Mecânica.** A calibração precisa de uma estatística da gravação INTEIRA, e em
+tempo de inferência o app não tem isso — tem a janela corrente de 4,5 s de uma
+execução que ainda não terminou. Qualquer aproximação (percentil da janela,
+referência do enquadramento inicial) é uma grandeza diferente da que o modelo
+viu no treino, e divergência treino/inferência não dá erro: dá resposta errada no
+celular e certa no notebook.
 
-No app, a referência equivalente deve vir do enquadramento frontal inicial (guia
-de câmera), medida uma vez por sessão, e não da janela corrente.
+**Medida.** Calibrar não ajudava o modelo que de fato embarca — atrapalhava:
+
+| | janela | gravação | pior dobra |
+|---|---|---|---|
+| Embarcável, com calibração | 0,891 | 0,907 | 0,756 |
+| **Embarcável, sem calibração** | **0,939** | **0,953** | **0,904** |
+| Floresta (teto), com calibração | 0,959 | 1,000 | 0,850 |
+| Floresta (teto), sem calibração | 0,946 | 0,953 | — |
+
+A leitura: a calibração **ajudava a floresta e atrapalhava a rede**. Ela injeta a
+escala de cada gravação na feature, e a floresta aproveita isso para separar
+gravações — o que não transfere para uma pessoa nova. O salto da pior dobra, de
+0,756 para 0,904, é o sinal mais direto disso.
+
+`controle_de_calibracao()` continua medindo as duas versões em cada execução, na
+configuração vencedora, para a escolha permanecer visível em vez de virar
+folclore.
 
 ## Estratégias de janelamento avaliadas
 
@@ -260,9 +294,9 @@ Detalhe de cada uma no cabeçalho de [`features.py`](features.py).
 | | descrição | melhor acurácia por janela |
 |---|---|---|
 | A | janela fixa, estatísticas sobre coordenadas normalizadas pelo **span de ombros** — reprodução do teste exploratório | 0,794 |
-| B | idem, sobre os sinais normalizados pelo **tronco**, com yaw assinado | 0,949 |
-| C | **ordem temporal preservada**: 5 sub-intervalos, cada um com as próprias estatísticas | **0,959** |
-| D | janela de **um ciclo** do movimento, estimado do sinal, reamostrada | 0,939 |
+| B | idem, sobre os sinais normalizados pelo **tronco**, com yaw assinado | 0,927 |
+| C | **ordem temporal preservada**: 5 sub-intervalos, cada um com as próprias estatísticas | **0,946** |
+| D | janela de **um ciclo** do movimento, estimado do sinal, reamostrada | 0,936 |
 
 ## Próximos passos (fora deste módulo)
 
