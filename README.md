@@ -47,7 +47,7 @@ O app se organiza em quatro pilares, descritos no plano de trabalho:
 - **Modelo de classificação de postura**: hoje a postura é validada por regras geométricas; o plano prevê complementar com um modelo embarcado treinado
 - **Guia de enquadramento no app**: [`CameraGuide.kt`](app/src/main/java/com/dancaai/dancaai/CameraGuide.kt) está implementado, mas só é usado pela `MainActivity` de protótipo, que não é alcançável pela interface
 - **Vibração e feedback por voz**: as preferências são persistidas no Perfil, mas a sessão de treino ainda não as consome
-- Migração de telas com estado mais complexo (ex. `TrainingScreen`) para `ViewModel`, com o aparato de coleta de dataset atrás de um "modo coleta"
+- Migração de telas com estado mais complexo (ex. `TrainingScreen`) para `ViewModel`, com o aparato de coleta de dataset atrás de um "modo coleta" — [`TrainingViewModel`](app/src/main/java/com/dancaai/app/ui/training/TrainingViewModel.kt) já existe e guarda o participante da coleta; o resto do painel continua em `remember {}`
 
 ## Stack técnica
 
@@ -117,7 +117,7 @@ O Apps Script do lado do Google precisa esperar exatamente essas colunas, nessa 
 
 A coluna `label` (`Rotulo` na planilha) não é mais descritiva: ela carrega o rótulo de treino, escolhido no seletor da tela de Treino (pílula "GRAVANDO", acima dos botões de captura). Antes do seletor o app mandava `"Captura #1"` e os rótulos de verdade eram digitados à mão na planilha depois da coleta — origem de erro silencioso, já que uma linha mal rotulada só aparece no treino.
 
-O formato é `assunto@angulo`, com sufixo `|c<ciclo>t<tempo>` nas capturas contínuas. Os valores vêm de [`CaptureLabel.kt`](app/src/main/java/com/dancaai/app/data/model/CaptureLabel.kt):
+O formato é `assunto@angulo`, com o segmento `|p<NN>` do participante e sufixo `|c<ciclo>t<tempo>` nas capturas contínuas. Os valores vêm de [`CaptureLabel.kt`](app/src/main/java/com/dancaai/app/data/model/CaptureLabel.kt):
 
 | Assunto | Token | | Ângulo | Token |
 |---|---|---|---|---|
@@ -132,7 +132,19 @@ O formato é `assunto@angulo`, com sufixo `|c<ciclo>t<tempo>` nas capturas cont�
 | Giro em linha (Base 4 / 5 pisadas) | `mov_giro_linha` | | | |
 | Teste de envio | `teste` | | | |
 
-Exemplos: `post_ruim_OF@lado_D`, `mov_base1@frente|c3t2` (3º ciclo do metrônomo, 2º tempo do compasso).
+Exemplos: `post_ruim_OF@lado_D`, `mov_base1@frente|c3t2` (3º ciclo do metrônomo, 2º tempo do compasso), `post_boa@frente|p03|c1t1` (participante `p03`).
+
+#### Participante da coleta
+
+O seletor tem um campo **Participante**: código opaco e sequencial (`p01`, `p02`, …), trocado com `−` / `Próxima pessoa +` antes de gravar cada pessoa. Nunca nome nem inicial — a planilha é de dados corporais e este repositório é público. O código aparece também na pílula "GRAVANDO", em amarelo (`p--`) enquanto nenhum está armado, porque esquecer de trocar não dá nenhum sinal na hora da coleta. Fica persistido em [`UserPreferences.kt`](app/src/main/java/com/dancaai/app/data/local/UserPreferences.kt), então reabrir a tela no meio de uma coleta não zera a contagem.
+
+Quando uma gravação de movimento começa com um par (participante, passo) já gravado na mesma tela, o app avisa por Toast — é o sinal típico de que alguém esqueceu de avançar o código.
+
+**Por que o campo existe.** Os scripts de treino precisam agrupar as capturas por pessoa: um participante que atravessa treino e teste faz a validação cruzada medir memorização em vez de generalização. Sem identificador, o agrupamento era inferido do Timestamp (`GAP_MINUTOS = 5`). Na coleta de **04/11/2026**, com 7 pessoas, duas foram gravadas com menos de 5 minutos de intervalo e o heurístico as fundiu: a "sessão" ficou com 160 capturas de postura em vez de 80 e as gravações de movimento apareceram a 18–20 Hz em vez dos 10 Hz reais, porque o contador `r` reinicia a cada participante e as amostras das duas pessoas colidiram no mesmo `(rotulo, r)`. A validação rodou com 6 grupos onde havia 7 pessoas.
+
+**O dado antigo não se corrige sozinho.** As 815 capturas de postura e as 44 gravações de movimento já coletadas não têm o campo, e seguem agrupadas pelo heurístico. Para a coleta de 04/11/2026 isso exige o corte manual em `2026-11-04 21:13:30`, registrado em `CORTES_MANUAIS` em [`treinar_multilabel.py`](modelo_postura/treinar_multilabel.py); cada instante dessa lista força uma fronteira de grupo mesmo sem o intervalo de 5 minutos.
+
+A posição do segmento é contrato com o dataset já coletado: vem **depois do ângulo e antes do metadado**, de modo que `split("@")[1].split("|")[0]` continue devolvendo o ângulo e o filtro de trajetória `\|r\d` continue casando. No fim do token, as gravações de duas pessoas se interleavariam na ordenação da planilha — justamente a colisão que o identificador desfaz. Ele ficou no rótulo, e não numa 39ª coluna, pelo mesmo motivo do metadado de compasso: o Apps Script espera as 38 colunas na ordem exata, e mexer nisso no meio da coleta invalidaria as linhas já enviadas.
 
 #### Gravação de movimento
 

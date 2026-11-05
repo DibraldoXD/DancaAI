@@ -104,6 +104,10 @@ class SessionRepository(context: Context) {
     suspend fun setVoiceFeedbackEnabled(enabled: Boolean) =
         preferences.setVoiceFeedbackEnabled(enabled)
 
+    /** Participante corrente da coleta de dataset; 0 limpa o campo. */
+    suspend fun setCollectParticipant(number: Int) =
+        preferences.setCollectParticipant(number)
+
     /**
      * Espaço ocupado pelo histórico, somando os arquivos auxiliares do SQLite: o
      * WAL sozinho pode ser maior que o `.db`, e ignorá-lo subestimaria o total que

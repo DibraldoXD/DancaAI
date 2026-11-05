@@ -30,9 +30,13 @@ import com.dancaai.app.data.model.CaptureGroup
 import com.dancaai.app.data.model.CaptureLabel
 import com.dancaai.app.data.model.CaptureSubject
 import com.dancaai.app.data.model.CaptureView
+import com.dancaai.app.data.model.ParticipantId
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
+
+/** Placeholder do código quando nenhum participante está armado. */
+private const val SEM_PARTICIPANTE = "p--"
 
 /**
  * Pílula do HUD com o rótulo armado no momento. Fica logo acima dos botões de
@@ -64,6 +68,16 @@ fun CaptureLabelPill(label: CaptureLabel, onClick: () -> Unit, modifier: Modifie
             color = Color.White,
             maxLines = 1,
         )
+        // O participante fica na pílula, e não só dentro do seletor, porque
+        // esquecer de trocar entre duas pessoas não dá nenhum sinal na hora — só
+        // aparece no treino, como dois participantes fundidos num grupo só.
+        Text(
+            label.participant?.token ?: SEM_PARTICIPANTE,
+            fontFamily = MonoFontFamily,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (label.participant == null) DcaTheme.colors.warn else Color.White,
+        )
         Text("▾", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
     }
 }
@@ -78,6 +92,8 @@ fun CaptureLabelPill(label: CaptureLabel, onClick: () -> Unit, modifier: Modifie
 fun CaptureLabelPicker(
     current: CaptureLabel,
     onChange: (CaptureLabel) -> Unit,
+    onParticipantNext: () -> Unit,
+    onParticipantPrevious: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -112,6 +128,14 @@ fun CaptureLabelPicker(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            // Primeiro da lista: é o campo que se troca a cada pessoa, enquanto
+            // assunto e ângulo costumam ficar os mesmos por vários minutos.
+            ParticipantRow(
+                participant = current.participant,
+                onNext = onParticipantNext,
+                onPrevious = onParticipantPrevious,
+            )
+
             CaptureGroup.entries.forEach { group ->
                 Text(
                     group.display.uppercase(),
@@ -153,6 +177,77 @@ fun CaptureLabelPicker(
 
         DcaFilledButton("Pronto", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.navigationBarsOrMinPadding(24.dp))
+    }
+}
+
+/**
+ * Participante corrente: código opaco e sequencial, trocado com − / +.
+ *
+ * Não é campo de texto livre porque o que se precisa aqui é só separar uma
+ * pessoa da outra — nome ou inicial no rótulo iria para uma planilha de dados
+ * corporais num repositório público. O botão "Próximo" é o caminho normal; o
+ * "−" existe para corrigir um avanço acidental.
+ */
+@Composable
+private fun ParticipantRow(
+    participant: ParticipantId?,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+) {
+    val colors = DcaTheme.colors
+    val armado = participant != null
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(Shapes.md)
+            .background(if (armado) colors.surface2 else colors.warnDim)
+            .border(1.dp, if (armado) colors.outline else colors.warn, Shapes.md)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "PARTICIPANTE",
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (armado) colors.onSurfaceDim else colors.warn,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                participant?.token ?: SEM_PARTICIPANTE,
+                fontFamily = MonoFontFamily,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (armado) colors.accent else colors.warn,
+            )
+        }
+        Text(
+            if (armado) {
+                "Troque a cada pessoa. É este código que separa os participantes " +
+                    "na validação do modelo."
+            } else {
+                "Sem participante as capturas saem sem identificador, e o " +
+                    "agrupamento por pessoa volta a ser adivinhado pelo horário."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (armado) colors.onSurfaceVar else colors.warn,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            DcaChip(
+                label = "−",
+                active = false,
+                onClick = onPrevious,
+                modifier = Modifier.weight(1f),
+            )
+            DcaChip(
+                label = if (armado) "Próxima pessoa +" else "Começar em p01",
+                active = !armado,
+                onClick = onNext,
+                modifier = Modifier.weight(3f),
+            )
+        }
     }
 }
 

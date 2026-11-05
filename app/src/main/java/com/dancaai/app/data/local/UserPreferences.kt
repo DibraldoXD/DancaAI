@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +20,12 @@ data class UserSettings(
     val onboardingDone: Boolean = false,
     val vibrationEnabled: Boolean = true,
     val voiceFeedbackEnabled: Boolean = false,
+    /**
+     * Participante corrente da coleta de dataset, como número (0 = nenhum
+     * armado). Vive aqui, e não no estado da tela de Treino, para que reabrir a
+     * tela no meio de uma coleta não zere a contagem — ver `ParticipantId`.
+     */
+    val collectParticipant: Int = 0,
 ) {
     val firstName: String get() = name.trim().substringBefore(' ')
 
@@ -40,6 +47,7 @@ class UserPreferences(context: Context) {
             onboardingDone = prefs[KEY_ONBOARDING_DONE] ?: false,
             vibrationEnabled = prefs[KEY_VIBRATION] ?: true,
             voiceFeedbackEnabled = prefs[KEY_VOICE] ?: false,
+            collectParticipant = prefs[KEY_COLLECT_PARTICIPANT] ?: 0,
         )
     }
 
@@ -59,11 +67,17 @@ class UserPreferences(context: Context) {
         store.edit { it[KEY_VOICE] = enabled }
     }
 
+    /** Troca o participante da coleta; 0 limpa o campo. */
+    suspend fun setCollectParticipant(number: Int) {
+        store.edit { it[KEY_COLLECT_PARTICIPANT] = number.coerceAtLeast(0) }
+    }
+
     private companion object {
         val KEY_NAME = stringPreferencesKey("name")
         val KEY_LEVEL = stringPreferencesKey("level")
         val KEY_ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
         val KEY_VIBRATION = booleanPreferencesKey("vibration")
         val KEY_VOICE = booleanPreferencesKey("voice_feedback")
+        val KEY_COLLECT_PARTICIPANT = intPreferencesKey("collect_participant")
     }
 }

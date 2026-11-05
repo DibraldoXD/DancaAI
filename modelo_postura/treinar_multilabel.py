@@ -55,6 +55,12 @@ df["Angulo"] = (
     df["Rotulo"].str.split("@").str[1].str.split("|").str[0].fillna("nao_informado")
 )
 
+# Participante da captura, no segmento `|p<NN>` do rótulo (ver CaptureLabel.kt).
+# É o único campo que diz, sem adivinhar, quais linhas vieram da mesma pessoa.
+# Precisa ser extraído aqui, antes de o rótulo ser cortado no "@". As capturas
+# feitas antes do campo não o têm e ficam como NaN — tratado mais abaixo.
+df["Participante"] = df["Rotulo"].str.extract(r"\|p(\d+)")[0]
+
 # Amostras de gravação de movimento (sufixo `|r<n>s<i>t<ms>`) são pontos de uma
 # trajetória a 10 Hz, não poses escolhidas. Centenas delas num mesmo bloco não
 # são exemplos independentes de postura: entrariam como peso enorme numa única
@@ -86,14 +92,60 @@ print(f"Snapshot: {snapshot}")
 print(f"SHA-256 (12): {hashlib.sha256(df.to_csv(index=False).encode()).hexdigest()[:12]}")
 print(f"Linhas: {len(df)}")
 
-# Agrupamento por sessão de coleta: evita que linhas quase idênticas caiam ao
-# mesmo tempo no treino e no teste. Derivado do Timestamp, não identifica ninguém.
+# ── agrupamento por pessoa ────────────────────────────────────────────────
+#
+# O que a validação cruzada precisa separar é PESSOA, não bloco de tempo: um
+# participante que atravessa treino e teste faz o número medir memorização em vez
+# de generalização. Quando o rótulo traz `|p<NN>`, o agrupamento é exato.
+#
+# Sem o campo, resta o heurístico antigo: quebra a cada intervalo maior que
+# GAP_MINUTOS no Timestamp. Ele é frágil por construção — na coleta de 04/11/2026
+# duas pessoas foram gravadas com menos de 5 minutos de intervalo e viraram um
+# grupo só (160 capturas onde deviam haver 80), e a validação rodou com 6 grupos
+# onde havia 7 pessoas. O identificador existe para que isso não se repita; o dado
+# antigo não se corrige sozinho e precisa dos cortes abaixo.
 GAP_MINUTOS = 5
+
+# Cortes manuais no heurístico, para o dado anterior ao campo de participante.
+# Cada instante aqui força uma fronteira de grupo: as linhas a partir dele entram
+# num grupo distinto do bloco anterior, mesmo sem intervalo de 5 minutos.
+CORTES_MANUAIS = [
+    # 04/11/2026: separa os dois participantes que o heurístico fundiu.
+    "2026-11-04 21:13:30",
+]
+
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 df = df.sort_values("Timestamp").reset_index(drop=True)
-df["sessao"] = (df["Timestamp"].diff() > pd.Timedelta(minutes=GAP_MINUTOS)).cumsum()
-grupos = df["sessao"].to_numpy()
-print(f"Sessões de coleta detectadas: {df['sessao'].nunique()}")
+
+por_horario = (df["Timestamp"].diff() > pd.Timedelta(minutes=GAP_MINUTOS)).cumsum()
+# Somar os cortes à contagem acumulada preserva blocos contíguos: as duas séries
+# são não-decrescentes no tempo, então um corte só acrescenta fronteira, nunca
+# junta dois blocos que o intervalo já havia separado.
+for corte in pd.to_datetime(pd.Series(CORTES_MANUAIS)):
+    por_horario = por_horario + (df["Timestamp"] >= corte).astype(int)
+
+tem_participante = df["Participante"].notna()
+# O prefixo mantém os dois mundos em espaços de nomes distintos: um grupo vindo
+# do rótulo nunca se confunde com um grupo inferido do horário.
+df["grupo"] = np.where(
+    tem_participante,
+    "p" + df["Participante"].fillna("0").str.zfill(2),
+    "horario_" + por_horario.astype(str),
+)
+grupos = df["grupo"].to_numpy()
+
+n_identificadas = int(tem_participante.sum())
+print(f"\nGrupos para a validação cruzada: {df['grupo'].nunique()}")
+print(f"  por identificador de participante: {n_identificadas} linha(s)")
+print(f"  por intervalo de tempo (fallback):  {len(df) - n_identificadas} linha(s)")
+if n_identificadas < len(df):
+    print(
+        f"⚠  {len(df) - n_identificadas} captura(s) sem `|p<NN>` no rótulo: coletadas\n"
+        f"   antes do campo de participante. O agrupamento delas é inferido do\n"
+        f"   Timestamp e pode fundir duas pessoas gravadas em sequência — por isso\n"
+        f"   CORTES_MANUAIS. Coletas novas trazem o campo e não dependem disso."
+    )
+print(df["grupo"].value_counts().sort_index().to_string())
 
 # %% ─────────────────────── 2. alvos multirrótulo ───────────────────────
 
@@ -207,7 +259,7 @@ print("\n" + "=" * 78)
 print("IMPORTÂNCIA DAS COORDENADAS (permutação, por desvio)")
 print("=" * 78)
 
-cv = GroupKFold(n_splits=min(5, df["sessao"].nunique()))
+cv = GroupKFold(n_splits=min(5, df["grupo"].nunique()))
 treino_idx, teste_idx = next(cv.split(X_todas, Y[:, 0], grupos))
 
 # Regressão logística, e não Random Forest: na primeira execução o RF não
