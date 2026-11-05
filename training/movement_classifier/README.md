@@ -20,16 +20,29 @@ gravação daquela pessoa.
 |---|---|---|
 | Chute na classe majoritária | 0,208 | — |
 | Teste exploratório anterior a este módulo (janela de 3 s) | 0,776 | — |
-| **Modelo embarcável (TFLite, `keras/mlp`)** | **0,884** | **0,884** (38/43) |
+| **Modelo embarcável (TFLite, `keras/mlp_largo`)** | **0,891** | **0,907** (39/43) |
 | Teto medido (random forest, não embarcável) | 0,959 | 1,000 (43/43) |
 
-f1 por passo do modelo embarcável: giro invertido 0,99 · balanço 0,96 ·
-base 2 0,90 · base 1 0,89 · giro em linha 0,83 · abertura 0,73.
+f1 por passo do modelo embarcável: giro invertido 0,99 · balanço 0,95 ·
+base 1 0,90 · base 2 0,88 · giro em linha 0,86 · abertura 0,77.
 
-Os números são reproduzíveis: `train.py` ativa `enable_op_determinism()` do
-TensorFlow. Sem isso, duas execuções do mesmo script davam 0,886 e 0,898 para a
-mesma arquitetura — variação maior que a diferença entre as arquiteturas
-comparadas, o que tornaria a escolha um sorteio.
+### O que nestes números é robusto e o que não é
+
+`train.py` ativa `enable_op_determinism()` do TensorFlow, então **uma execução é
+reproduzível**: mesma entrada, mesma saída. Isso não é o mesmo que estabilidade.
+
+As três arquiteturas Keras comparadas ficam dentro de 1,4 ponto uma da outra
+(0,878 / 0,877 / 0,891 na última execução), e esse intervalo é menor que a
+sensibilidade do treino à **ordem** das janelas. Renomear as chaves de gravação
+— mudança puramente cosmética, que não altera a partição dos participantes —
+trocou a arquitetura vencedora de `mlp` para `mlp_largo`. Determinismo garante
+reprodutibilidade dada a mesma entrada, não invariância à ordem dela.
+
+A conclusão a tirar daqui: **a escolha entre as três arquiteturas não é
+sustentada pelos dados**, e citar uma delas como "a melhor" seria ler ruído. O
+que é robusto, e por margem larga, é a faixa: ~0,88–0,89 fora da amostra contra
+0,776 do teste exploratório e 0,208 do chute. É essa comparação que sustenta a
+atividade A.2.2, não a terceira casa decimal.
 
 **Abertura × giro em linha melhorou de verdade.** Era o par que se confundia
 mutuamente (f1 0,47 e 0,62 no teste exploratório). Um classificador binário só
@@ -65,19 +78,19 @@ pausa. Ganho de 0,941 → 0,959 na floresta.
 
 ### Onde ainda erra
 
-- **A lacuna entre o teto e o embarcável é real: 0,959 contra 0,884.** A floresta
+- **A lacuna entre o teto e o embarcável é real: 0,959 contra 0,891.** A floresta
   ganha por capturar interação entre features ("yaw alto no 4º sub-intervalo E pé
   fechado no 5º"), e árvore não converte para TFLite sem op custom. O número que
-  vale para o app é **0,884**, não o da floresta. Fechar essa diferença por
+  vale para o app é **0,891**, não o da floresta. Fechar essa diferença por
   destilação (treinar a rede nas probabilidades da floresta) é o próximo passo
   natural e não foi feito aqui.
-- **O ganho se concentra onde o erro é mais caro, mas a abertura segue sendo o
-  ponto fraco.** No modelo embarcável, a abertura tem f1 0,73 e 37 das suas 128
-  janelas vão para giro em linha; na volta, 24 das 177 janelas de giro em linha
-  vão para abertura. Toda a confusão residual está nesse par — nenhuma janela de
-  abertura ou de giro em linha é confundida com os outros quatro passos.
+- **A abertura segue sendo o ponto fraco.** No modelo embarcável tem f1 0,77, e
+  28 das suas 132 janelas vão para giro em linha; na volta, 24 das 177 janelas de
+  giro em linha vão para abertura. Esse par concentra quase toda a confusão
+  residual — nenhuma janela de abertura ou de giro em linha é confundida com os
+  passos rotacionalmente parados (balanço, base 1, base 2).
 - **A pior dobra do LOPO fica bem abaixo da média.** No embarcável, a média de
-  0,884 vem de dobras entre 0,765 e 0,957; no teto, de dobras entre 0,850 e 1,000
+  0,891 vem de dobras entre 0,756 e 0,962; no teto, de dobras entre 0,850 e 1,000
   (desvio 0,053). No binário abertura × giro em linha, dois participantes puxam
   para baixo: 0,88 e 0,74, contra 0,98–1,00 nos outros cinco. Com 7 pessoas, uma
   dobra ruim é 14% do resultado — "funciona" e "funciona para quem dança parecido
@@ -87,7 +100,7 @@ pausa. Ganho de 0,941 → 0,959 na floresta.
   inversões por segundo, desaceleração no fim). Giro em linha mede 3,0–4,3 rad/s
   de rotação contra 1,35–2,90 da abertura, sem nenhuma gravação de um passo
   caindo na faixa típica do outro — as execuções são distintas e os rótulos se
-  sustentam. Uma gravação chama atenção: `p0/mov_abertura/r4`, com 0,13
+  sustentam. Uma gravação chama atenção: `horario_0/mov_abertura/r4`, com 0,13
   inversões/s contra 0,89–1,38 das outras aberturas e um terço do tempo quase
   parada. Parece execução lenta ou hesitante, e vale conferir no vídeo.
 - **Segmentar por ciclo do movimento foi pior que janela de duração fixa**
@@ -111,7 +124,7 @@ Em ordem de retorno esperado:
 3. **Segunda câmera ou outro ângulo.** Todas as 43 gravações são de frente. A
    rotação é justamente o que uma câmera frontal mede pior, e é o discriminador do
    par difícil.
-4. **Destilação da floresta para a rede**, para recuperar os 0,075 de lacuna
+4. **Destilação da floresta para a rede**, para recuperar os 0,068 de lacuna
    entre o teto medido e o que embarca.
 
 ## Fluxo de ponta a ponta
@@ -193,15 +206,37 @@ Duas, já corrigidas em `load_data.py`, que invalidam o resultado se voltarem:
 
 1. **A segmentação por intervalo de 5 minutos funde dois participantes.** Na
    coleta de 04/11/2026 duas pessoas se seguiram com menos de 5 minutos de
-   intervalo. Com o `r` repetido entre elas, `p3/mov_base1/r2` juntava a gravação
-   de uma às 21:09:49 com a da outra às 21:14:12, numa chave só. Daí o corte
-   manual em `2026-11-04 21:13:30` (`CORTE_MANUAL`), que separa as duas e fecha em
+   intervalo. Com o `r` repetido entre elas, `mov_base1/r2` juntava a gravação de
+   uma às 21:09:49 com a da outra às 21:14:12, numa chave só. Daí o corte manual
+   em `2026-11-04 21:13:30` (`CORTES_MANUAIS`), que separa as duas e fecha em
    **7 participantes, 44 gravações**. Sem o corte, duas pessoas atravessam treino
    e teste e o número mede memorização. O sintoma é a taxa aparente: 18–20 Hz em
    vez de 10 Hz.
-2. **Uma gravação degenerada.** `p0/mov_giro_linha/r6` tem 2,2 s e 23 amostras —
-   menos de um ciclo até no andamento mais lento que o metrônomo permite (60 BPM).
-   É descartada, deixando **43 gravações e 5.444 amostras**.
+2. **Uma gravação degenerada.** `horario_0/mov_giro_linha/r6` tem 2,2 s e 23
+   amostras — menos de um ciclo até no andamento mais lento que o metrônomo
+   permite (60 BPM). É descartada, deixando **43 gravações e 5.444 amostras**.
+
+### Participante vindo do rótulo
+
+O app passou a gravar o participante no rótulo, no segmento `|p<NN>` entre o
+ângulo e o metadado de quadro (ver `ParticipantId` em `CaptureLabel.kt`):
+
+```
+mov_giro_linha@frente|p07|r2s014t0467     com o campo
+mov_giro_linha@frente|r2s014t0467         formato anterior, ainda válido
+```
+
+`load_data.py` **prefere o campo quando ele existe** e cai no heurístico de
+horário quando não — as 44 gravações de 04/11/2026 são anteriores ao campo. Os
+dois ficam em espaços de nomes distintos (`p07` contra `horario_3`), igual a
+`modelo_postura/treinar_multilabel.py`, para que um grupo vindo do rótulo nunca
+se confunda com um grupo inferido do horário.
+
+O segmento é opcional no `PADRAO_ROTULO`, e tem de continuar sendo: se o padrão
+passasse a exigi-lo, as gravações antigas deixariam de casar e simplesmente
+desapareceriam do relatório, sem erro. A lista `CORTES_MANUAIS` é a mesma dos
+scripts de postura e precisa ser mantida em sincronia com eles — os dois leem a
+mesma planilha, e se divergirem passam a discordar sobre quem é quem.
 
 ### Calibração do yaw: uma dependência medida, não assumida
 

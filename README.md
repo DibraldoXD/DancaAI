@@ -156,7 +156,7 @@ Dois módulos de treino, com a mesma estrutura (`data/` e `models/` ignorados pe
 | Módulo | Alvo | Estado |
 |---|---|---|
 | [`training/posture_classifier/`](training/posture_classifier/README.md) | postura (A.1.4) | estrutura de treino pronta, acurácia a documentar |
-| [`training/movement_classifier/`](training/movement_classifier/README.md) | os 6 passos de forró (A.2.2) | **0,884 por janela / 0,884 por gravação**, fora da amostra |
+| [`training/movement_classifier/`](training/movement_classifier/README.md) | os 6 passos de forró (A.2.2) | **0,891 por janela / 0,907 por gravação**, fora da amostra |
 
 O número do classificador de movimentos é leave-one-participant-out nos 7 participantes da coleta de 04/11/2026, contra 0,208 de chute na classe majoritária. Dois achados de lá valem para qualquer coisa que derive dessas coordenadas: normalizar pelo **comprimento do tronco** em vez do span de ombros (o span colapsa quando a pessoa fica de perfil) e usar o deslocamento de ombros **com sinal** em vez do módulo.
 

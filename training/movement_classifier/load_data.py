@@ -80,25 +80,36 @@ NOMES_PASSOS = {
 # milissegundos desde o início da gravação — os dois são necessários porque
 # frames sem pessoa no enquadramento não viram amostra, e é o salto no `t` que
 # revela o buraco.
+# O segmento `|p<NN>` é OPCIONAL porque foi introduzido depois da coleta de
+# 04/11/2026: as 44 gravações existentes não o têm, as novas têm. Sem o `?` aqui,
+# toda captura nova seria descartada silenciosamente — apareceria só como um
+# número menor de amostras no relatório, sem erro nenhum.
 PADRAO_ROTULO = re.compile(
     r"^(?P<passo>mov_[a-z0-9_]+)@(?P<angulo>[a-zA-Z_]+)"
+    r"(?:\|p(?P<participante>\d+))?"
     r"\|r(?P<r>\d+)s(?P<s>\d+)t(?P<t>\d+)$"
 )
 
 GAP_SESSAO_MINUTOS = 5
 
-# Corte manual dentro da sessão fundida da coleta de 04/11/2026.
+# Cortes manuais no heurístico de horário, para o dado anterior ao campo de
+# participante. Cada instante força uma fronteira de grupo.
 #
-# Dois participantes se seguiram com menos de 5 minutos de intervalo, então o
-# agrupamento por tempo os juntou. O sintoma é a taxa de amostragem aparente:
-# uma sessão de uma pessoa mede ~10 Hz (o intervalo do MovementRecorder); a
-# sessão fundida mede 18-20 Hz, porque duas gravações distintas com o mesmo
-# `r` entram como se fossem uma, com os tempos interleavados.
+# Na coleta de 04/11/2026 dois participantes se seguiram com menos de 5 minutos
+# de intervalo, então o agrupamento por tempo os juntou. O sintoma é a taxa de
+# amostragem aparente: uma sessão de uma pessoa mede ~10 Hz (o intervalo do
+# MovementRecorder); a sessão fundida mede 18-20 Hz, porque duas gravações
+# distintas com o mesmo `r` entram como se fossem uma, com os tempos
+# interleavados.
 #
 # O instante abaixo foi lido da própria planilha: é o intervalo sem captura
-# entre a última gravação de uma pessoa e a primeira da seguinte. Uma coleta
-# nova não precisa dele — precisa registrar o participante no rótulo.
-CORTE_MANUAL = pd.Timestamp("2026-11-04 21:13:30")
+# entre a última gravação de uma pessoa e a primeira da seguinte. Não sabemos se
+# é o instante exato da troca, só que cai no silêncio entre as duas.
+#
+# A lista é a MESMA de `modelo_postura/treinar_multilabel.py` (CORTES_MANUAIS) e
+# tem de continuar sendo: os dois scripts leem a mesma planilha, e se divergirem
+# passam a discordar sobre quem é quem.
+CORTES_MANUAIS = ["2026-11-04 21:13:30"]
 
 # Duração mínima de uma gravação aproveitável.
 #
@@ -152,6 +163,7 @@ def extrair_gravacoes(df: pd.DataFrame) -> pd.DataFrame:
     mov = df[é_gravacao].copy()
     mov["passo"] = campos.loc[é_gravacao, "passo"]
     mov["angulo"] = campos.loc[é_gravacao, "angulo"]
+    mov["participante_rotulo"] = campos.loc[é_gravacao, "participante"]
     mov["r"] = campos.loc[é_gravacao, "r"].astype(int)
     mov["indice_amostra"] = campos.loc[é_gravacao, "s"].astype(int)
     mov["t_s"] = campos.loc[é_gravacao, "t"].astype(int) / 1000.0
@@ -176,39 +188,52 @@ def extrair_gravacoes(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _segmentar_participantes(mov: pd.DataFrame) -> pd.DataFrame:
-    """Deriva o rótulo de participante: intervalo de 5 min + o corte manual.
+    """Deriva o grupo de participante, preferindo o rótulo ao horário.
 
-    O rótulo é posicional (`p0`, `p1`, ...), derivado só do Timestamp — não
-    identifica ninguém, o que importa porque este repositório é público.
+    Quando o rótulo traz `|p<NN>` (ver `ParticipantId` em CaptureLabel.kt), o
+    agrupamento é exato. Sem o campo, resta o heurístico de intervalo de tempo
+    mais os [CORTES_MANUAIS] — frágil por construção, e a razão de o campo
+    existir.
+
+    Os dois mundos ficam em espaços de nomes distintos (`p07` contra
+    `horario_3`), do mesmo jeito que em `treinar_multilabel.py`: um grupo vindo
+    do rótulo nunca pode se confundir com um grupo inferido do horário, senão
+    duas pessoas diferentes acabariam com a mesma chave. Nenhuma das duas formas
+    identifica ninguém — o código do participante é opaco e sequencial, o que
+    importa porque este repositório é público.
     """
     mov = mov.sort_values(["Timestamp", "indice_amostra"]).reset_index(drop=True)
-    gap = mov["Timestamp"].diff() > pd.Timedelta(minutes=GAP_SESSAO_MINUTOS)
-    sessao = gap.cumsum()
 
-    # Só a sessão atravessada pelo corte é dividida. Aplicar o corte a todas as
-    # sessões criaria um participante vazio em cada uma que começa depois dele.
-    antes = set(sessao[mov["Timestamp"] < CORTE_MANUAL])
-    depois = set(sessao[mov["Timestamp"] >= CORTE_MANUAL])
-    fundidas = antes & depois
+    por_horario = (
+        mov["Timestamp"].diff() > pd.Timedelta(minutes=GAP_SESSAO_MINUTOS)
+    ).cumsum()
+    # Somar os cortes à contagem acumulada preserva blocos contíguos: as duas
+    # séries são não-decrescentes no tempo, então um corte só acrescenta
+    # fronteira, nunca junta dois blocos que o intervalo já havia separado.
+    for corte in pd.to_datetime(pd.Series(CORTES_MANUAIS)):
+        por_horario = por_horario + (mov["Timestamp"] >= corte).astype(int)
 
-    sufixo = np.where(
-        sessao.isin(fundidas) & (mov["Timestamp"] >= CORTE_MANUAL), "b", ""
+    tem_participante = mov["participante_rotulo"].notna()
+    mov["participante"] = np.where(
+        tem_participante,
+        "p" + mov["participante_rotulo"].fillna("0").str.zfill(2),
+        "horario_" + por_horario.astype(str),
     )
-    mov["participante"] = "p" + sessao.astype(str) + sufixo
 
-    print(f"\nSessões por intervalo de {GAP_SESSAO_MINUTOS} min: {sessao.nunique()}")
-    if fundidas:
+    identificadas = int(tem_participante.sum())
+    print(f"\nGrupos de participante: {mov['participante'].nunique()}")
+    print(f"  pelo campo `|p<NN>` do rótulo:     {identificadas} amostra(s)")
+    print(f"  inferidos do horário (fallback):   {len(mov) - identificadas} amostra(s)")
+    if identificadas < len(mov):
         print(
-            f"Corte manual em {CORTE_MANUAL} dividiu a(s) sessão(ões) {sorted(fundidas)} "
-            f"— duas pessoas se seguiram em menos de {GAP_SESSAO_MINUTOS} min."
+            f"AVISO: {len(mov) - identificadas} amostra(s) sem `|p<NN>` no rótulo — "
+            "coletadas antes\n"
+            "   do campo de participante. O agrupamento delas vem do Timestamp e pode\n"
+            f"   fundir duas pessoas gravadas em sequência; daí os {len(CORTES_MANUAIS)} "
+            "corte(s) manual(is).\n"
+            "   Confira a taxa de amostragem no relatório abaixo: acima de 12 Hz é\n"
+            "   sinal de fusão que um corte novo precisa separar."
         )
-    else:
-        print(
-            "AVISO: O corte manual não encontrou sessão fundida. Se a planilha cresceu "
-            "com uma coleta nova, confira se a fusão continua no mesmo instante "
-            "(sintoma: taxa aparente acima de 12 Hz no relatório abaixo)."
-        )
-    print(f"Participantes: {mov['participante'].nunique()}")
     return mov
 
 
