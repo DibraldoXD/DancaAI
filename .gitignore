@@ -21,3 +21,13 @@ training/posture_classifier/models/*
 !training/posture_classifier/models/.gitkeep
 __pycache__/
 *.pyc
+
+# Modelo do classificador de movimentos: treinado sobre dados corporais dos
+# participantes da coleta, e este repositorio e publico. Fica no repositorio
+# privado FelipeMDR/DancaAI-modelos e e copiado para ca por quem compila (ver
+# training/movement_classifier/README.md). O app roda sem ele, apenas sem o
+# modulo de execucao de movimentos.
+#
+# O pose_landmarker_lite.task do MediaPipe CONTINUA versionado: e modelo
+# pre-treinado do Google, nao derivado de ninguem daqui.
+app/src/main/assets/movement_classifier.tflite

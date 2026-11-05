@@ -64,6 +64,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dancaai.app.audio.Metronome
 import com.dancaai.app.MovementDirection
 import com.dancaai.app.PostureResult
@@ -87,6 +89,9 @@ import com.dancaai.app.ui.components.CaptureLabelPill
 import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.MetronomeControl
+import com.dancaai.app.ui.movement.MovementHud
+import com.dancaai.app.ui.movement.MovementViewModel
+import com.dancaai.app.ui.movement.toPoseSample
 import com.dancaai.app.ui.components.navigationBarsOrMinPadding
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
@@ -249,6 +254,13 @@ fun TrainingScreen(
     var recordingElapsedMs by remember { mutableLongStateOf(0L) }
 
     // ── Saída ao vivo dos módulos de análise ──
+    // Execucao de movimentos (A.2.2) em ViewModel, nao em remember: a logica
+    // aqui nao e trivial (janela deslizante, voto, sequencia do desafio) e o
+    // CLAUDE.md pede ViewModel para as telas que a gente mexe e tem logica
+    // dessas. O resto desta tela segue em remember e vai migrando aos poucos.
+    val movementViewModel: MovementViewModel = viewModel()
+    val movementState by movementViewModel.state.collectAsStateWithLifecycle()
+
     val accumulator = remember { SessionAccumulator() }
     var postureResult by remember { mutableStateOf<PostureResult>(PostureResult.Unknown) }
     var weightInfo by remember {
@@ -386,6 +398,14 @@ fun TrainingScreen(
                             if (!pausedState.value) accumulator.onWeight(info)
                         }
                         it.onPoseFrame = { frameTimeMs ->
+                            // currentLandmarks ja esta atualizado quando este
+                            // callback dispara (ver PoseCameraView.onResults), entao
+                            // o frame lido aqui e o corrente, nao o anterior.
+                            if (!pausedState.value) {
+                                cameraViewRef.value?.currentLandmarks
+                                    ?.toPoseSample(frameTimeMs)
+                                    ?.let(movementViewModel::onPose)
+                            }
                             if (!pausedState.value && movementRecorder.isRecording) {
                                 movementRecorder.onFrame(frameTimeMs)?.let { meta ->
                                     captureAndUpload(meta)
@@ -471,6 +491,13 @@ fun TrainingScreen(
         ) {
             if (metronomePlaying) RhythmBadge(lastJudgement)
             if (hasPermission) PostureBadge(postureResult)
+            if (hasPermission) {
+                MovementHud(
+                    state = movementState,
+                    onModeChange = movementViewModel::setMode,
+                    onRestart = movementViewModel::restartChallenge,
+                )
+            }
             MetronomeControl(
                 bpm = metronomeBpm,
                 playing = metronomePlaying,

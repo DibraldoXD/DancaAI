@@ -17,6 +17,16 @@ package com.dancaai.app.analysis.movement
  * não a partir do último aceito, pela mesma razão que no `MovementRecorder`: um
  * quadro atrasado não deve deslocar todas as amostras seguintes.
  *
+ * Por que nenhuma janela sai nos primeiros segundos
+ * ────────────────────────────────────────────────
+ * Uma janela só é emitida quando já existe [windowMs] de tempo decorrido para
+ * fatiar. A tolerância de [MIN_OCCUPANCY] é para quadros perdidos no meio da
+ * execução, não para o buffer enchendo: uma janela de aquecimento cobriria menos
+ * tempo que a do treino, e amplitude por sub-intervalo medida sobre menos tempo
+ * é outra grandeza. Numa versão anterior desta classe a janela saía com 42
+ * amostras cobrindo 4,2 s em vez de 45 cobrindo 4,5 s, e o vetor-ouro foi o que
+ * acusou.
+ *
  * Por que o buffer guarda uma amostra a mais que a janela
  * ──────────────────────────────────────────────────────
  * No treino as velocidades foram derivadas sobre a GRAVAÇÃO inteira e só depois
@@ -31,12 +41,20 @@ class MovementWindow(
 ) {
     private val samples = ArrayDeque<FrameSignals>()
     private var nextSampleAtMs = Long.MIN_VALUE
+    private var firstSampleAtMs = Long.MIN_VALUE
     private var lastWindowAtMs = Long.MIN_VALUE
 
     /** Amostras que uma janela cheia contém, na grade nominal. */
     private val samplesPerWindow = (windowMs / INTERVAL_MS).toInt()
 
-    /** Mínimo para a janela valer, igual ao `OCUPACAO_MINIMA` do `features.py`. */
+    /**
+     * Mínimo para a janela valer, igual ao `OCUPACAO_MINIMA` do `features.py`.
+     *
+     * A tolerância existe para QUADROS PERDIDOS — pessoa saindo do enquadramento
+     * no meio da execução —, não para o buffer ainda estar enchendo. Uma janela
+     * de aquecimento cobre menos tempo que [windowMs], e amplitude por
+     * sub-intervalo calculada sobre menos tempo é outra grandeza.
+     */
     private val minimumSamples = maxOf((MIN_OCCUPANCY * samplesPerWindow).toInt(), 4)
 
     /** Quadros aceitos na grade, para a UI poder mostrar o aquecimento do buffer. */
@@ -46,22 +64,24 @@ class MovementWindow(
     fun reset() {
         samples.clear()
         nextSampleAtMs = Long.MIN_VALUE
+        firstSampleAtMs = Long.MIN_VALUE
         lastWindowAtMs = Long.MIN_VALUE
         acceptedSamples = 0
     }
 
     /**
      * Oferece um quadro. Devolve a janela pronta quando este quadro completa um
-     * passo de [hopMs], e `null` nos outros casos.
+     * passo de [hopMs], e `null` nos outros casos — inclusive durante os
+     * primeiros [windowMs] de sessão, quando ainda não há intervalo completo.
      *
-     * Quadros sem pose no enquadramento simplesmente não chegam aqui — quem
+     * Quadros sem pose no enquadramento simplesmente não chegam aqui: quem
      * chama passa só o que o MediaPipe resolveu. O buraco aparece como salto no
      * tempo, que é o que as features de velocidade usam.
      */
     fun offer(signals: FrameSignals): List<FrameSignals>? {
         if (nextSampleAtMs == Long.MIN_VALUE) {
             nextSampleAtMs = signals.timeMs
-            lastWindowAtMs = signals.timeMs
+            firstSampleAtMs = signals.timeMs
         }
         if (signals.timeMs < nextSampleAtMs) return null
 
@@ -74,25 +94,26 @@ class MovementWindow(
             nextSampleAtMs += INTERVAL_MS
         } while (nextSampleAtMs <= signals.timeMs)
 
-        // Mantém a janela mais UMA amostra, a que dá velocidade à primeira.
-        while (samples.size > samplesPerWindow + 1) samples.removeFirst()
+        val now = signals.timeMs
+        val windowStart = now - windowMs
 
-        if (signals.timeMs - lastWindowAtMs < hopMs) return null
-        val window = currentWindow() ?: return null
-        lastWindowAtMs = signals.timeMs
+        // Guarda exatamente UMA amostra em windowStart ou antes: é ela que dá
+        // velocidade à primeira amostra da janela, reproduzindo o treino, onde
+        // as velocidades foram derivadas sobre a gravação inteira e só depois
+        // fatiadas. Mais que uma seria memória sem uso.
+        while (samples.size > 1 && samples.elementAt(1).timeMs <= windowStart) {
+            samples.removeFirst()
+        }
+
+        // Só a partir daqui existe um intervalo de windowMs para fatiar.
+        if (now - firstSampleAtMs < windowMs) return null
+        if (lastWindowAtMs != Long.MIN_VALUE && now - lastWindowAtMs < hopMs) return null
+
+        val window = samples.filter { it.timeMs > windowStart }
+        if (window.size < minimumSamples) return null
+
+        lastWindowAtMs = now
         return window
-    }
-
-    /**
-     * A janela atual, ou `null` enquanto não houver amostras suficientes.
-     *
-     * Descarta a amostra extra do buffer: ela existe só para dar velocidade à
-     * primeira da janela, e entraria como uma amostra a mais no cálculo de média
-     * e amplitude se fosse adiante.
-     */
-    private fun currentWindow(): List<FrameSignals>? {
-        val window = if (samples.size > samplesPerWindow) samples.drop(1) else samples.toList()
-        return if (window.size >= minimumSamples) window else null
     }
 
     /**
@@ -137,8 +158,18 @@ class MovementWindow(
         /** 10 Hz, o mesmo do `MovementRecorder` que gravou o dataset. */
         const val INTERVAL_MS = 100L
 
-        /** Janela de 3 s — a configuração `C@3.0s`, a melhor medida sob LOPO. */
-        const val WINDOW_MS = 3_000L
+        /**
+         * Janela de 4,5 s — a configuração `C@4.5s`, a melhor medida sob LOPO
+         * com o pipeline sem calibração do yaw, que é o que embarca.
+         *
+         * Não é constante livre: ela tem de casar com a janela do modelo em
+         * `models/movement_classifier_meta.json`. Mudar aqui sem reexportar o
+         * modelo (ou vice-versa) alimenta o grafo com features calculadas sobre
+         * outro intervalo — sem erro, com resposta errada. O `MovementFeaturesTest`
+         * compara contra o vetor-ouro, cuja janela sai desses metadados, então é
+         * ele que acusa a divergência.
+         */
+        const val WINDOW_MS = 4_500L
 
         /** Passo entre janelas, igual ao `HOP_S` do `features.py`. */
         const val HOP_MS = 500L
