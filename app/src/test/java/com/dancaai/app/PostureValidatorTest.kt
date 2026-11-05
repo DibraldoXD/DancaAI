@@ -13,7 +13,9 @@ import java.util.Optional
  * contra 0,15 absoluto, e com o praticante enquadrado de corpo inteiro — obrigatório
  * em dança — o span fica em 0,08–0,12. Resultado: as regras de ombros à frente e de
  * inclinação lateral do tronco ficavam inertes e nada no app denunciava isso. Os
- * números dos cenários abaixo vêm do dataset de 8 participantes.
+ * números dos cenários abaixo vêm do dataset de postura: 8 participantes, sendo 7 da
+ * coleta de 04/11/2026 mais quem gravou as duas sessões anteriores. Não confundir com
+ * os 7 participantes citados no classificador de movimentos, que usa só o 04/11.
  */
 class PostureValidatorTest {
 

@@ -24,7 +24,12 @@ object PostureValidator {
      * coluna `Threshold_Ombros_Encurvados` da planilha de coleta, e serve de referência
      * de calibração para o classificador que vai assumir o desvio.
      *
-     * Por que a regra caiu, medido nas 815 capturas rotuladas de 8 participantes: o
+     * Por que a regra caiu, medido nas 815 capturas rotuladas do dataset de postura —
+     * 8 participantes, sendo 7 da coleta de 04/11/2026 mais quem gravou as duas sessões
+     * anteriores (28/08 e 02/09), contadas como uma pessoa só. Essa última parte é
+     * premissa, não dado: o dataset não tem identificador de participante, e o
+     * agrupamento é inferido do intervalo entre capturas. Se as duas datas antigas
+     * forem de pessoas diferentes, são 9. O
      * limiar ótimo de Zdiff depende da distância da câmera, e varia 3,8× dentro da
      * faixa que o dataset cobre — 0,38 com o tronco em 0,098 (longe), 1,34 em 0,140,
      * 1,44 em 0,164 (perto). Nenhum valor único serve, e a troca de denominador não
