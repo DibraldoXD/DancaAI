@@ -47,6 +47,14 @@ android {
 dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
 
+    // Runtime TFLite para o classificador de passos treinado em
+    // training/movement_classifier/. O MediaPipe acima embute o próprio runtime,
+    // mas não expõe API para rodar um modelo nosso — daí a dependência separada.
+    // Se o build acusar .so duplicado (libtensorflowlite_jni.so), a saída é um
+    // `packaging { jniLibs { pickFirsts += ... } }` no bloco android, não remover
+    // esta linha.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+
     val cameraxVersion = "1.3.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
