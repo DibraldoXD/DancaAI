@@ -102,11 +102,13 @@ As seções 1–4 regem o auxílio na escrita acadêmica (TCC01/TCC02). Esta se�
 
 Concluídos: metrônomo configurável (BPM + tipo de batida), sincronização ritmo × transferência de peso, unificação dos thresholds de postura, e o Perfil lendo dados reais (nada mais vem de repositório mockado).
 
+Postura, estado a partir do PR #13: o portão de vista frontal do `PostureValidator` passou a medir orientação (razão span de ombros / comprimento do tronco ≥ 0,60) em vez de distância (span cru ≥ 0,15), que barrava 91% das capturas em enquadramento de corpo inteiro e mantinha a inclinação lateral do tronco inerte. No mesmo PR, **ombros encurvados saiu das regras**: o limiar ótimo de Zdiff varia 3,8× com a distância da câmera, e teste em aparelho confirmou os dois modos de falha (silêncio a vários metros mesmo em L, alarme falso de perto). Ombro esquerdo/direito e inclinação lateral seguem nas regras e foram confirmados em campo.
+
 Em ordem:
 - **Modo coleta**: switch no Perfil que liga o aparato de coleta de dataset, hoje sempre visível no Treino. Exige extrair o painel do `TrainingScreen` e migrá-lo para `TrainingViewModel`.
-- **Guia de enquadramento**: expor o `CameraGuide`, hoje inalcançável, no Treino e numa tela de posicionamento.
+- **Guia de enquadramento**: expor o `CameraGuide`, hoje inalcançável, no Treino e numa tela de posicionamento. Ganhou peso: a distância da câmera é variável livre hoje, e é ela que inviabiliza limiar fixo sobre o eixo z. Controlar o enquadramento reduz a faixa que o modelo de postura precisa cobrir, e torna comparáveis as capturas de coletas diferentes.
 - **Ritmo na sessão**: metrônomo opcionalmente automático ao iniciar, vibração no beat (consumindo a preferência já persistida) e tolerância de ritmo configurável e gravada na sessão.
-- **Modelo embarcado de postura**: treinar com o dataset coletado, exportar TFLite e usar como validação complementar às regras geométricas.
+- **Modelo embarcado de postura**: treinar com o dataset coletado, exportar TFLite e embarcar. **Deixou de ser validação complementar e passou a ser a única fonte de ombros encurvados**, desde que a regra geométrica saiu (ver "Postura, estado a partir do PR #13" acima) — o app hoje não dá nenhum retorno sobre esse desvio, então esta tarefa bloqueia um feedback existente, não acrescenta um novo. A distância da câmera (`tronco`, já incluída como feature em `modelo_postura/treinar_multilabel.py`) é o que permite ao modelo aprender a correção de perspectiva que nenhum limiar fixo consegue. Em ombro esquerdo/direito o modelo precisa *ganhar* das regras para justificar substituí-las; em ombros encurvados basta ser melhor que silêncio.
 - **Execução de movimentos**: dataset → modelo TFLite de sequência → classificador embarcado → modos Livre e Desafio.
 - **Pontuação de sessão**: bloqueada até a calibração com praticantes. Derivada das medições na leitura, para valer também nas sessões já gravadas.
 
