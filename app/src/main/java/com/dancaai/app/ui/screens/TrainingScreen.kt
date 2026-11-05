@@ -132,7 +132,9 @@ private fun List<DebugSnapshot>.toClipboardText(): String {
         )) {
             lines += "  $label  x=%.3f  y=%.3f  z=%.3f".format(xyz.x, xyz.y, xyz.z)
         }
-        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-%.3f".format(
+        // `thr` é registro de calibração, não critério: ombros encurvados saiu das
+        // regras por depender do z do MediaPipe — ver PostureValidator.
+        lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-%.3f (OF fora das regras)".format(
             snap.shoulderSpan, snap.zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD)
         lines += "  VISTA  razao=%.3f  min=%.2f  %s".format(
             snap.frontality, PostureValidator.MIN_FRONTAL_RATIO,
@@ -890,11 +892,11 @@ private fun SnapshotCard(snap: DebugSnapshot) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("CALC ", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
                 fontSize = 12.sp, color = Color.Yellow, modifier = Modifier.width(48.dp))
-            Text("span=%.3f  Zdiff=%.3f  thr=-%.3f".format(
+            Text("span=%.3f  Zdiff=%.3f  thr=-%.3f (OF fora das regras)".format(
                     snap.shoulderSpan, snap.zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD),
                 fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
         }
-        // portão de vista frontal — diz se as regras 2 e 3 foram avaliadas ou ignoradas
+        // portão de vista frontal — diz se a inclinação lateral foi avaliada ou ignorada
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val frontal = snap.frontality >= PostureValidator.MIN_FRONTAL_RATIO
             Text("VISTA", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,

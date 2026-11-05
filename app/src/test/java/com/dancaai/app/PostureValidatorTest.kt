@@ -89,16 +89,17 @@ class PostureValidatorTest {
     @Test
     fun `enquadramento de corpo inteiro e avaliado como frontal`() {
         // span 0,116 e tronco 0,140 são as medianas do dataset: razão 0,83, bem acima
-        // do mínimo. Com o portão antigo (span >= 0,15) este corpo era ignorado.
+        // do mínimo. Com o portão antigo (span >= 0,15) este corpo era ignorado, e com
+        // ele a inclinação lateral — o desvio abaixo nunca disparava em campo.
         val span = 0.116f
         assertTrue("o portão antigo barrava este span", span < 0.15f)
 
         val result = PostureValidator.validate(
-            body(shoulderSpan = span, torsoLength = 0.140f, zDiff = -0.30f)
+            body(shoulderSpan = span, torsoLength = 0.140f, trunkTiltDeg = 18f)
         )
         assertTrue(
-            "ombros à frente tem de ser detectado em enquadramento de corpo inteiro",
-            issues(result).contains(PostureIssue.SHOULDERS_FORWARD),
+            "em enquadramento de corpo inteiro o portão tem de abrir",
+            issues(result).contains(PostureIssue.TRUNK_TILT_LEFT),
         )
     }
 
@@ -116,9 +117,12 @@ class PostureValidatorTest {
     // ---------- o portão continua barrando o que deve ----------
 
     @Test
-    fun `de perfil nao avalia ombros a frente nem inclinacao lateral`() {
-        // Span colapsado com tronco intacto = pessoa de lado. zDiff e tilt gritantes
-        // não podem gerar desvio, porque em perfil essas grandezas não significam nada.
+    fun `de perfil nao avalia os desvios que dependem de vista frontal`() {
+        // Span colapsado com tronco intacto = pessoa de lado. O tilt gritante não pode
+        // gerar desvio: de perfil, o deslocamento em x mede profundidade, não postura.
+        // O zDiff extremo entra para documentar que ombros encurvados também não sai —
+        // hoje por estar fora das regras, e amanhã, quando o classificador assumir,
+        // porque inferir sobre alguém de perfil continua sem sentido.
         val result = PostureValidator.validate(
             body(shoulderSpan = 0.03f, torsoLength = 0.140f, zDiff = -1.0f, trunkTiltDeg = 30f)
         )
@@ -143,21 +147,39 @@ class PostureValidatorTest {
         )
     }
 
-    // ---------- limiar de ombros à frente ----------
+    // ---------- ombros encurvados saiu das regras ----------
 
     @Test
-    fun `postura boa nao dispara ombros a frente no limiar recalibrado`() {
-        // Zdiff normalizado mediano da postura boa no dataset: −0,65. O limiar antigo
-        // (0,40) classificava isso como desvio; o novo (1,40) não.
-        val zDiffNormalizadoDePosturaBoa = -0.65f
-        val span = 0.116f
-        val result = PostureValidator.validate(
-            body(shoulderSpan = span, torsoLength = 0.140f, zDiff = zDiffNormalizadoDePosturaBoa * span)
+    fun `ombros a frente nunca sai das regras, em nenhuma distancia`() {
+        // Nenhuma regra fixa sobre o eixo z do MediaPipe sobrevive à variação de
+        // distância: o limiar ótimo de Zdiff varia 3,8× dentro da faixa do dataset
+        // (0,38 longe · 1,34 médio · 1,44 perto). Os dois primeiros casos abaixo são os
+        // modos de falha observados em teste no aparelho, com o limiar fixo em 1,40.
+        // O desvio passa a ser responsabilidade do classificador embarcado; até lá o
+        // app não afirma nada sobre ele. Se este teste quebrar, alguém reativou a regra.
+        val casos = listOf(
+            // tronco, zDiff, descrição
+            Triple(0.098f, -0.40f, "longe e muito inclinado — a regra dizia 'postura ok'"),
+            Triple(0.164f, -0.09f, "perto com postura boa — a regra acusava desvio"),
+            Triple(0.140f, -1.00f, "distância mediana, inclinação extrema"),
+            Triple(0.140f, 0.00f, "sem inclinação alguma"),
         )
-        assertTrue(
-            "o Zdiff típico de postura boa não pode ser alarme",
-            !issues(result).contains(PostureIssue.SHOULDERS_FORWARD),
-        )
+        for ((tronco, zDiff, descricao) in casos) {
+            val result = PostureValidator.validate(
+                body(shoulderSpan = 0.116f, torsoLength = tronco, zDiff = zDiff)
+            )
+            assertTrue(
+                "SHOULDERS_FORWARD não pode vir das regras ($descricao)",
+                !issues(result).contains(PostureIssue.SHOULDERS_FORWARD),
+            )
+        }
+    }
+
+    @Test
+    fun `o identificador do desvio continua existindo para o historico`() {
+        // O nome da constante é o identificador gravado no banco, e as sessões já
+        // registradas o contêm. Desativar a regra não pode apagar o enum.
+        assertEquals("Ombros encurvados", PostureIssue.SHOULDERS_FORWARD.label)
     }
 
     @Test

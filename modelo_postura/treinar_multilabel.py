@@ -176,7 +176,10 @@ X_geo = pd.DataFrame(
     index=df.index,
 )
 
-CONJUNTOS = {"coordenadas (33)": X_todas, "geométricas (9)": X_geo}
+# A contagem no nome exclui o `tronco`, acrescentado mais abaixo aos dois conjuntos:
+# ele não é uma feature de postura, é a distância da câmera, e entra justamente para o
+# modelo poder corrigir o viés de perspectiva do eixo z.
+CONJUNTOS = {"coordenadas (33) + dist": X_todas, "geométricas (9) + dist": X_geo}
 for nome, X in CONJUNTOS.items():
     CONJUNTOS[nome] = X.fillna(X.median(numeric_only=True))
 
@@ -200,14 +203,25 @@ for nome, X in CONJUNTOS.items():
 #   2.387 frames de balanço, base 1 e base 2 (passos sem rotação, logo frontais por
 #   construção), cuja razão mínima observada é 0,658.
 #
-#   O limiar de Zdiff era 0,40, mas o Zdiff normalizado da postura BOA tem mediana
-#   −0,65 no dataset: o limiar antigo ficava DENTRO da faixa da postura correta e só
-#   não disparava sem parar porque o portão de span barrava quase tudo antes. 1,40 é o
-#   ponto de melhor f1 na varredura (precisão 0,53 · recall 0,48 · alarme falso em
-#   postura boa 3,9%).
+#   OMBROS À FRENTE SAIU DAS REGRAS. O limiar de Zdiff era 0,40; recalibrado deu 1,40,
+#   e o teste em aparelho reprovou os dois. O motivo, medido nas 815 capturas: o limiar
+#   ótimo DEPENDE DA DISTÂNCIA e varia 3,8× dentro da faixa do dataset — 0,38 com o
+#   tronco em 0,098 (longe), 1,34 em 0,140, 1,44 em 0,164 (perto). Trocar o denominador
+#   não resolve: `dz` bruto, `dz/span`, `dz/tronco` e o ângulo sagital `atan2(dz, dy)`
+#   têm todos mediana ~2× maior de perto que de longe, porque a causa é o próprio z do
+#   MediaPipe (estimado: a perspectiva exagera profundidade de perto e achata de longe).
+#   O único sinal estável com a distância, `tronco/span`, não usa z e é fraco sozinho
+#   (AUC 0,373 contra 0,224 do `dz/span`).
+#
+#   Consequência para este script: o baseline de regras agora prevê SEMPRE negativo em
+#   OF. Isso não é bug a corrigir — é o ponto de partida honesto contra o qual o
+#   classificador tem de provar que vale. Em OF basta ele ser melhor que silêncio; em
+#   OE/OD, que são ângulos em (x,y), ele precisa ganhar de regras que funcionam bem
+#   (confirmado em teste de campo). A distância (`tronco`) entra como FEATURE do modelo,
+#   para que ele aprenda a correção em vez de supô-la constante.
 LIMIAR_NIVEL_OMBROS = 5.0
-LIMIAR_OMBROS_FRENTE = 1.40
 MIN_RAZAO_FRONTAL = 0.60
+OF_NAS_REGRAS = False  # espelha PostureValidator.kt: regra desativada
 
 tronco = np.linalg.norm(ombro_meio[:, :2] - quadril_centro[:, :2], axis=1)
 tronco_seguro = np.where(tronco < 1e-4, np.nan, tronco)
@@ -218,16 +232,28 @@ desnivelado = np.abs(angulo_ombros) > LIMIAR_NIVEL_OMBROS
 print(
     f"\nPortão de vista frontal (razão span/tronco >= {MIN_RAZAO_FRONTAL}): "
     f"{int(vista_frontal.sum())} de {len(df)} capturas ({vista_frontal.mean():.1%}) "
-    "entram nas regras 2 e 3."
+    "entram na regra de inclinação lateral."
 )
+if not OF_NAS_REGRAS:
+    print(
+        "Ombros à frente está FORA das regras: o baseline prevê negativo em OF, e é "
+        "contra esse silêncio que o modelo é comparado nesse desvio."
+    )
 
 Y_regras = np.column_stack(
     [
         desnivelado & (ombro_dy > 0),                              # OE
         desnivelado & (ombro_dy <= 0),                             # OD
-        (zdiff_norm < -LIMIAR_OMBROS_FRENTE) & vista_frontal,      # OF
+        # OF: sem regra. Ver o bloco de limiares acima.
+        np.zeros(len(df), dtype=bool) if not OF_NAS_REGRAS
+        else (zdiff_norm < -1.40) & vista_frontal,
     ]
 ).astype(int)
+
+# A distância entra como feature para o modelo poder aprender a correção que nenhum
+# limiar fixo consegue. `tronco` é o proxy: maior = mais perto da câmera.
+for _conjunto in CONJUNTOS.values():
+    _conjunto["tronco"] = tronco
 
 # %% ──────────── 5. quais coordenadas importam para cada desvio ────────────
 

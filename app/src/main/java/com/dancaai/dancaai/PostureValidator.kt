@@ -19,25 +19,44 @@ object PostureValidator {
     /**
      * Zdiff (ombros − quadril, em z) normalizado pelo span de ombros.
      *
-     * Era 0,40. Medido nas 815 capturas rotuladas do dataset de 8 participantes, o
-     * Zdiff normalizado da postura BOA tem mediana −0,65 — ou seja, o limiar antigo
-     * ficava dentro da faixa da postura correta e só não disparava sem parar porque o
-     * portão de span barrava quase tudo antes. 1,40 é o ponto de melhor f1 na varredura
-     * (precisão 0,53 · recall 0,48 · alarme falso em postura boa 3,9%).
+     * NÃO É MAIS UM CRITÉRIO DE DECISÃO. A verificação de ombros encurvados saiu das
+     * regras (ver a seção 2 de [validate]); este valor permanece porque vai para a
+     * coluna `Threshold_Ombros_Encurvados` da planilha de coleta, e serve de referência
+     * de calibração para o classificador que vai assumir o desvio.
+     *
+     * Por que a regra caiu, medido nas 815 capturas rotuladas de 8 participantes: o
+     * limiar ótimo de Zdiff depende da distância da câmera, e varia 3,8× dentro da
+     * faixa que o dataset cobre — 0,38 com o tronco em 0,098 (longe), 1,34 em 0,140,
+     * 1,44 em 0,164 (perto). Nenhum valor único serve, e a troca de denominador não
+     * resolve: `dz` bruto, `dz/span`, `dz/tronco` e o ângulo sagital `atan2(dz, dy)`
+     * têm todos mediana ~2× maior de perto que de longe. A causa é o próprio z do
+     * MediaPipe, que é estimado — a perspectiva exagera profundidade de perto e a
+     * achata de longe. O único sinal estável com a distância, `tronco/span`, não usa z
+     * e é fraco demais sozinho (AUC 0,373 contra 0,224 do `dz/span`).
+     *
+     * Isso confirmou em campo o que a validação entre participantes já indicava: o
+     * recall era bimodal (0/20 em dois participantes, 20/20 em outros dois). Em teste
+     * no aparelho, com o praticante praticamente em L a vários metros a regra dizia
+     * "postura ok", e perto da câmera acusava desvio com postura correta.
      */
     internal const val SHOULDER_FORWARD_THRESHOLD   = 1.40f
 
     /**
-     * Frontalidade mínima para avaliar os desvios que dependem de vista frontal.
+     * Frontalidade mínima para avaliar a inclinação lateral do tronco.
      *
      * Substitui o antigo `MIN_FRONTAL_SPAN = 0.15f`, que comparava o span de ombros
      * cru contra um valor absoluto. Span cru encolhe por dois motivos independentes —
      * girar o corpo E afastar-se da câmera —, então o portão antigo barrava quem
      * estava de frente mas longe. Em dança o corpo inteiro tem de caber no quadro, e
      * aí os ombros ocupam ~8–12% da largura da imagem: das 815 capturas frontais do
-     * dataset, só 74 (9,1%) passavam o portão, e em 4 dos 8 participantes a regra de
-     * ombros à frente nunca disparou uma única vez. A inclinação lateral do tronco,
-     * que usa o mesmo portão, estava igualmente inerte.
+     * dataset, só 74 (9,1%) passavam o portão, e a inclinação lateral do tronco ficava
+     * inerte — nenhum teste em aparelho jamais a viu disparar.
+     *
+     * O portão protegia também a verificação de ombros encurvados, que desde então saiu
+     * das regras por depender do eixo z (ver [SHOULDER_FORWARD_THRESHOLD]). Quando o
+     * classificador assumir esse desvio, o mesmo critério de frontalidade provavelmente
+     * volta a valer para ele — a inferência sobre um praticante de perfil não tem mais
+     * sentido para um modelo do que tinha para a regra.
      *
      * O valor 0,60 vem de 2.387 frames de balanço, base 1 e base 2 — passos sem
      * rotação, logo frontais por construção —, cuja razão mínima observada é 0,658.
@@ -103,8 +122,9 @@ object PostureValidator {
             status = PostureStatus.WARNING
         }
 
-        // Portão de vista frontal, compartilhado pelas verificações 2 e 3: as duas leem
-        // grandezas que só fazem sentido com o praticante de frente. Ver MIN_FRONTAL_RATIO.
+        // Portão de vista frontal da verificação 3: a inclinação lateral do tronco lê
+        // um deslocamento em x, que de perfil mede profundidade, não desvio postural.
+        // Ver MIN_FRONTAL_RATIO.
         val shoulderSpan = kotlin.math.abs(rightShoulder.x() - leftShoulder.x())
         val shoulderMidX = (leftShoulder.x() + rightShoulder.x()) / 2f
         val shoulderMidY = (leftShoulder.y() + rightShoulder.y()) / 2f
@@ -115,17 +135,21 @@ object PostureValidator {
         ).toFloat()
         val isFrontalView = frontalityRatio(shoulderSpan, torsoLength) >= MIN_FRONTAL_RATIO
 
-        // 2. Verifica ombros encurvados — apenas em vista frontal
-        // Z normalizado pelo span — invariante à distância câmera e estatura (BlazePose [13]).
-        if (isFrontalView && shoulderSpan >= MIN_SEGMENT_LENGTH) {
-            val avgShoulderZ    = (leftShoulder.z() + rightShoulder.z()) / 2f
-            val avgHipZ         = (leftHip.z()       + rightHip.z())      / 2f
-            val normalizedZDiff = (avgShoulderZ - avgHipZ) / shoulderSpan
-            if (normalizedZDiff < -SHOULDER_FORWARD_THRESHOLD) {
-                issues.add(PostureIssue.SHOULDERS_FORWARD)
-                status = PostureStatus.WARNING
-            }
-        }
+        // 2. Ombros encurvados — DESATIVADO nas regras; ver SHOULDER_FORWARD_THRESHOLD.
+        //
+        // Nenhuma regra geométrica sobre o eixo z do MediaPipe sobrevive à variação de
+        // distância, e por isso este desvio não é mais decidido aqui. O lugar dele é o
+        // classificador embarcado, que recebe a distância como entrada e aprende a
+        // correção em vez de supô-la constante. Até ele existir, o app fica em silêncio
+        // sobre ombros encurvados: para um app de treino, não dizer nada é menos danoso
+        // que afirmar o contrário do que está acontecendo — o praticante corrigiria uma
+        // postura correta, ou confiaria num "está ok" medido errado.
+        //
+        // Deliberadamente NÃO removido: PostureIssue.SHOULDERS_FORWARD segue no enum,
+        // porque é o identificador gravado no banco e as sessões já registradas o
+        // contêm; e SHOULDER_FORWARD_THRESHOLD segue como constante, porque vai para a
+        // coluna `Threshold_Ombros_Encurvados` da planilha, cujo contrato de 38 colunas
+        // o Apps Script espera na ordem exata.
 
         // 3. Verifica inclinação lateral do tronco — apenas em vista frontal
         // Calcula o ângulo do segmento quadril→ombro com a vertical via atan2.
