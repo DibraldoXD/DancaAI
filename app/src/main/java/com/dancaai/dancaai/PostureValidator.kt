@@ -10,13 +10,67 @@ object PostureValidator {
     private const val LEFT_HIP       = 23
     private const val RIGHT_HIP      = 24
 
-    // Thresholds ajustáveis. SHOULDER_FORWARD_THRESHOLD é internal (não private)
-    // de propósito: é a única fonte de verdade do threshold de ombros encurvados,
-    // referenciada também no debug do TrainingScreen para não haver drift entre os dois.
+    // Thresholds ajustáveis. SHOULDER_FORWARD_THRESHOLD e MIN_FRONTAL_RATIO são
+    // internal (não private) de propósito: são a única fonte de verdade desses dois
+    // critérios, referenciados também no debug do TrainingScreen e nos testes para
+    // não haver drift entre eles.
     private const val SHOULDER_LEVEL_THRESHOLD_DEG  = 5f    // ângulo da linha de ombros com a horizontal
-    internal const val SHOULDER_FORWARD_THRESHOLD    = 0.40f // Zdiff normalizado pelo span (invariante à distância/estatura)
-    private const val MIN_FRONTAL_SPAN               = 0.15f // span mínimo — só valida de frente
+
+    /**
+     * Zdiff (ombros − quadril, em z) normalizado pelo span de ombros.
+     *
+     * Era 0,40. Medido nas 815 capturas rotuladas do dataset de 8 participantes, o
+     * Zdiff normalizado da postura BOA tem mediana −0,65 — ou seja, o limiar antigo
+     * ficava dentro da faixa da postura correta e só não disparava sem parar porque o
+     * portão de span barrava quase tudo antes. 1,40 é o ponto de melhor f1 na varredura
+     * (precisão 0,53 · recall 0,48 · alarme falso em postura boa 3,9%).
+     */
+    internal const val SHOULDER_FORWARD_THRESHOLD   = 1.40f
+
+    /**
+     * Frontalidade mínima para avaliar os desvios que dependem de vista frontal.
+     *
+     * Substitui o antigo `MIN_FRONTAL_SPAN = 0.15f`, que comparava o span de ombros
+     * cru contra um valor absoluto. Span cru encolhe por dois motivos independentes —
+     * girar o corpo E afastar-se da câmera —, então o portão antigo barrava quem
+     * estava de frente mas longe. Em dança o corpo inteiro tem de caber no quadro, e
+     * aí os ombros ocupam ~8–12% da largura da imagem: das 815 capturas frontais do
+     * dataset, só 74 (9,1%) passavam o portão, e em 4 dos 8 participantes a regra de
+     * ombros à frente nunca disparou uma única vez. A inclinação lateral do tronco,
+     * que usa o mesmo portão, estava igualmente inerte.
+     *
+     * O valor 0,60 vem de 2.387 frames de balanço, base 1 e base 2 — passos sem
+     * rotação, logo frontais por construção —, cuja razão mínima observada é 0,658.
+     * Fica logo abaixo disso: nenhum frame comprovadamente frontal é rejeitado, e
+     * ainda rejeita 40% dos frames de giro. Cobertura das capturas de postura:
+     * 9,1% → 92,9%.
+     */
+    internal const val MIN_FRONTAL_RATIO            = 0.60f
     private const val LATERAL_TILT_THRESHOLD_DEG     = 10f  // inclinação lateral do tronco em graus
+
+    /**
+     * Piso de sanidade para segmentos do corpo em coordenadas normalizadas.
+     *
+     * Abaixo disso o segmento é degenerado (landmarks colapsados num ponto) e qualquer
+     * razão calculada sobre ele é ruído amplificado. O portão antigo garantia um piso de
+     * span por acidente, já que comparava contra 0,15 absoluto; a razão de frontalidade
+     * não garante, então o piso passa a ser explícito.
+     */
+    private const val MIN_SEGMENT_LENGTH             = 1e-4f
+
+    /**
+     * O quanto o praticante está de frente para a câmera: 0 de perfil, ~0,85 de frente.
+     *
+     * É a razão entre o span de ombros e o comprimento do tronco, as duas medidas no
+     * plano da imagem. Os dois numeradores encolhem junto quando a pessoa se afasta da
+     * câmera, então a razão cancela a distância e a estatura e sobra a orientação: ao
+     * girar o corpo, o span projetado tende a zero enquanto o tronco permanece.
+     *
+     * Devolve 0 quando o tronco é degenerado, para que o chamador trate como "não dá
+     * para afirmar que está de frente" em vez de dividir por ~0 e aprovar.
+     */
+    internal fun frontalityRatio(shoulderSpan: Float, torsoLength: Float): Float =
+        if (torsoLength < MIN_SEGMENT_LENGTH) 0f else shoulderSpan / torsoLength
 
     fun validate(landmarks: List<NormalizedLandmark>): PostureResult {
         if (landmarks.size < 25) return PostureResult.Unknown
@@ -49,10 +103,21 @@ object PostureValidator {
             status = PostureStatus.WARNING
         }
 
-        // 2. Verifica ombros encurvados — apenas em vista frontal (portão de span)
-        // Z normalizado pelo span — invariante à distância câmera e estatura (BlazePose [13]).
+        // Portão de vista frontal, compartilhado pelas verificações 2 e 3: as duas leem
+        // grandezas que só fazem sentido com o praticante de frente. Ver MIN_FRONTAL_RATIO.
         val shoulderSpan = kotlin.math.abs(rightShoulder.x() - leftShoulder.x())
-        if (shoulderSpan >= MIN_FRONTAL_SPAN) {
+        val shoulderMidX = (leftShoulder.x() + rightShoulder.x()) / 2f
+        val shoulderMidY = (leftShoulder.y() + rightShoulder.y()) / 2f
+        val hipMidX      = (leftHip.x()      + rightHip.x())      / 2f
+        val hipMidY      = (leftHip.y()      + rightHip.y())      / 2f
+        val torsoLength  = kotlin.math.hypot(
+            (shoulderMidX - hipMidX).toDouble(), (shoulderMidY - hipMidY).toDouble()
+        ).toFloat()
+        val isFrontalView = frontalityRatio(shoulderSpan, torsoLength) >= MIN_FRONTAL_RATIO
+
+        // 2. Verifica ombros encurvados — apenas em vista frontal
+        // Z normalizado pelo span — invariante à distância câmera e estatura (BlazePose [13]).
+        if (isFrontalView && shoulderSpan >= MIN_SEGMENT_LENGTH) {
             val avgShoulderZ    = (leftShoulder.z() + rightShoulder.z()) / 2f
             val avgHipZ         = (leftHip.z()       + rightHip.z())      / 2f
             val normalizedZDiff = (avgShoulderZ - avgHipZ) / shoulderSpan
@@ -62,14 +127,10 @@ object PostureValidator {
             }
         }
 
-        // 3. Verifica inclinação lateral do tronco — apenas em vista frontal (portão de span)
+        // 3. Verifica inclinação lateral do tronco — apenas em vista frontal
         // Calcula o ângulo do segmento quadril→ombro com a vertical via atan2.
         // Latyshev [11]: ombros e quadril têm precisão <3% da altura — adequado para cálculo angular.
-        if (shoulderSpan >= MIN_FRONTAL_SPAN) {
-            val shoulderMidX = (leftShoulder.x() + rightShoulder.x()) / 2f
-            val shoulderMidY = (leftShoulder.y() + rightShoulder.y()) / 2f
-            val hipMidX      = (leftHip.x()       + rightHip.x())      / 2f
-            val hipMidY      = (leftHip.y()        + rightHip.y())      / 2f
+        if (isFrontalView) {
             val dx = shoulderMidX - hipMidX
             val dy = hipMidY - shoulderMidY  // positivo quando quadril está abaixo do ombro (normal)
             val lateralTiltDeg = Math.toDegrees(kotlin.math.atan2(dx.toDouble(), dy.toDouble())).toFloat()

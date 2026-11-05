@@ -111,6 +111,11 @@ private data class DebugSnapshot(
     // métricas derivadas
     val shoulderSpan: Float,
     val zDiff:        Float,  // avgShoulderZ − avgHipZ
+    // Razão span/tronco: o portão de vista frontal do PostureValidator. Sem ela no HUD
+    // não há como saber, em campo, se a regra de ombros à frente foi avaliada ou apenas
+    // ignorada por enquadramento — foi exatamente essa cegueira que deixou o portão
+    // antigo barrando 91% das capturas sem ninguém notar.
+    val frontality:   Float,
 )
 
 private fun List<DebugSnapshot>.toClipboardText(): String {
@@ -129,6 +134,9 @@ private fun List<DebugSnapshot>.toClipboardText(): String {
         }
         lines += "  CALC   span=%.3f  Zdiff=%.3f  thr=-%.3f".format(
             snap.shoulderSpan, snap.zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD)
+        lines += "  VISTA  razao=%.3f  min=%.2f  %s".format(
+            snap.frontality, PostureValidator.MIN_FRONTAL_RATIO,
+            if (snap.frontality >= PostureValidator.MIN_FRONTAL_RATIO) "frontal" else "fora de frente")
         lines += ""
     }
     return lines.joinToString("\n")
@@ -144,6 +152,11 @@ private fun List<NormalizedLandmark>.toSnapshot(label: String): DebugSnapshot {
     val span  = if (lS != null && rS != null) kotlin.math.abs(rS.x() - lS.x()) else 0f
     val zDiff = if (lS != null && rS != null && lH != null && rH != null)
         (lS.z() + rS.z()) / 2f - (lH.z() + rH.z()) / 2f else 0f
+    val torso = if (lS != null && rS != null && lH != null && rH != null)
+        kotlin.math.hypot(
+            ((lS.x() + rS.x()) / 2f - (lH.x() + rH.x()) / 2f).toDouble(),
+            ((lS.y() + rS.y()) / 2f - (lH.y() + rH.y()) / 2f).toDouble(),
+        ).toFloat() else 0f
     return DebugSnapshot(
         label         = label,
         nose          = at(0),
@@ -154,6 +167,7 @@ private fun List<NormalizedLandmark>.toSnapshot(label: String): DebugSnapshot {
         leftAnkle     = at(27), rightAnkle    = at(28),
         shoulderSpan  = span,
         zDiff         = zDiff,
+        frontality    = PostureValidator.frontalityRatio(span, torso),
     )
 }
 
@@ -879,6 +893,17 @@ private fun SnapshotCard(snap: DebugSnapshot) {
             Text("span=%.3f  Zdiff=%.3f  thr=-%.3f".format(
                     snap.shoulderSpan, snap.zDiff, PostureValidator.SHOULDER_FORWARD_THRESHOLD),
                 fontFamily = MonoFontFamily, fontSize = 12.sp, color = Color.White)
+        }
+        // portão de vista frontal — diz se as regras 2 e 3 foram avaliadas ou ignoradas
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val frontal = snap.frontality >= PostureValidator.MIN_FRONTAL_RATIO
+            Text("VISTA", fontFamily = MonoFontFamily, fontWeight = FontWeight.Bold,
+                fontSize = 12.sp, color = Color.Yellow, modifier = Modifier.width(48.dp))
+            Text("razao=%.3f  min=%.2f  %s".format(
+                    snap.frontality, PostureValidator.MIN_FRONTAL_RATIO,
+                    if (frontal) "frontal" else "fora de frente"),
+                fontFamily = MonoFontFamily, fontSize = 12.sp,
+                color = if (frontal) Color.White else Color(0xFFFFB300))
         }
     }
 }

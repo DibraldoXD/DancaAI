@@ -186,12 +186,40 @@ for nome, X in CONJUNTOS.items():
 # avaliá-lo por rótulo é a comparação justa. Ressalva: o app também exige
 # visibility >= 0.4, coluna que não vai para a planilha — o baseline aqui é
 # ligeiramente otimista.
+#
+# Os dois limiares abaixo mudaram em 05/11/2026 e precisam continuar espelhando o
+# Kotlin, senão este baseline compara contra um validador que não existe mais.
+#
+#   O portão de vista frontal era `span >= 0.15`, com o span de ombros CRU. Span cru
+#   encolhe por girar o corpo E por afastar-se da câmera, duas coisas diferentes. Com o
+#   praticante enquadrado de corpo inteiro — obrigatório em dança — o span fica em
+#   0,08–0,12, e das 815 capturas frontais do dataset só 9,1% passavam o portão: em 4
+#   dos 8 participantes a regra de ombros à frente nunca disparou uma única vez, e a
+#   regra de inclinação lateral, que usa o mesmo portão, estava igualmente inerte. A
+#   razão span/tronco cancela a distância e mede só a orientação. O valor 0,60 vem de
+#   2.387 frames de balanço, base 1 e base 2 (passos sem rotação, logo frontais por
+#   construção), cuja razão mínima observada é 0,658.
+#
+#   O limiar de Zdiff era 0,40, mas o Zdiff normalizado da postura BOA tem mediana
+#   −0,65 no dataset: o limiar antigo ficava DENTRO da faixa da postura correta e só
+#   não disparava sem parar porque o portão de span barrava quase tudo antes. 1,40 é o
+#   ponto de melhor f1 na varredura (precisão 0,53 · recall 0,48 · alarme falso em
+#   postura boa 3,9%).
 LIMIAR_NIVEL_OMBROS = 5.0
-LIMIAR_OMBROS_FRENTE = 0.40
-SPAN_FRONTAL_MINIMO = 0.15
+LIMIAR_OMBROS_FRENTE = 1.40
+MIN_RAZAO_FRONTAL = 0.60
 
-vista_frontal = span >= SPAN_FRONTAL_MINIMO
+tronco = np.linalg.norm(ombro_meio[:, :2] - quadril_centro[:, :2], axis=1)
+tronco_seguro = np.where(tronco < 1e-4, np.nan, tronco)
+razao_frontal = np.nan_to_num(span / tronco_seguro, nan=0.0)
+vista_frontal = razao_frontal >= MIN_RAZAO_FRONTAL
 desnivelado = np.abs(angulo_ombros) > LIMIAR_NIVEL_OMBROS
+
+print(
+    f"\nPortão de vista frontal (razão span/tronco >= {MIN_RAZAO_FRONTAL}): "
+    f"{int(vista_frontal.sum())} de {len(df)} capturas ({vista_frontal.mean():.1%}) "
+    "entram nas regras 2 e 3."
+)
 
 Y_regras = np.column_stack(
     [
