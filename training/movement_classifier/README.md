@@ -1,0 +1,242 @@
+# Classificador de movimentos (TFLite) — A.2.2
+
+Treino do classificador dos 6 passos de forró do escopo do TCC — balanço, base 1,
+base 2, abertura, giro invertido (base 3) e giro em linha (base 4) — a partir das
+gravações de pose coletadas pelo app. O cronograma (atividade A.2.2) pede acurácia
+documentada; a seção [Resultado](#resultado) é essa documentação.
+
+Mesma estrutura do módulo de postura
+([`training/posture_classifier/`](../posture_classifier/README.md)): `data/` e
+`models/` são ignorados pelo git, porque são dados corporais de participantes e
+este repositório é público.
+
+## Resultado
+
+Validação **leave-one-participant-out** nos 7 participantes da coleta de
+04/11/2026: cada janela é classificada por um modelo que nunca viu nenhuma
+gravação daquela pessoa.
+
+| | por janela | por gravação (voto majoritário) |
+|---|---|---|
+| Chute na classe majoritária | 0,208 | — |
+| Teste exploratório anterior a este módulo (janela de 3 s) | 0,776 | — |
+| **Modelo embarcável (TFLite, `keras/mlp`)** | **0,884** | **0,884** (38/43) |
+| Teto medido (random forest, não embarcável) | 0,959 | 1,000 (43/43) |
+
+f1 por passo do modelo embarcável: giro invertido 0,99 · balanço 0,96 ·
+base 2 0,90 · base 1 0,89 · giro em linha 0,83 · abertura 0,73.
+
+Os números são reproduzíveis: `train.py` ativa `enable_op_determinism()` do
+TensorFlow. Sem isso, duas execuções do mesmo script davam 0,886 e 0,898 para a
+mesma arquitetura — variação maior que a diferença entre as arquiteturas
+comparadas, o que tornaria a escolha um sorteio.
+
+**Abertura × giro em linha melhorou de verdade.** Era o par que se confundia
+mutuamente (f1 0,47 e 0,62 no teste exploratório). Um classificador binário só
+dos dois passos, sob LOPO, acerta 0,939 — contra 0,500 de chute. A confusão
+residual do modelo completo continua concentrada nesse par, e em dois
+participantes específicos (ver [Onde ainda erra](#onde-ainda-erra)).
+
+### Por que melhorou
+
+Não foi janela maior nem modelo maior. Foram duas correções no sinal, as duas com
+causa mecânica, medidas isoladamente pela comparação entre as estratégias A e B
+na varredura:
+
+1. **Normalizar pelo comprimento do tronco, não pelo span de ombros.** O span de
+   ombros projetado na imagem tende a zero quando o dançarino fica de perfil.
+   Dividir coordenadas por ele explode as features exatamente nos quadros de
+   rotação — que são os quadros que distinguem abertura de giro em linha. O
+   comprimento do tronco (quadril → ombro) é aproximadamente invariante à
+   rotação em torno do eixo vertical. Só essa troca levou 0,789 → 0,941.
+
+2. **Usar o deslocamento de ombros com sinal, não o módulo.** A razão
+   `span/tronco` em módulo dobra a curva de rotação no zero: uma rotação suave
+   vira uma oscilação de aparência aleatória, e a média dela não distingue nada.
+   O `dx` assinado de uma abertura a 10 Hz é
+   `+0,12 +0,52 +0,85 +0,89 +0,73 +0,07 −0,32 −0,80 −0,90 …` — contínuo e físico.
+
+A terceira melhora, menor, vem de **preservar a ordem temporal** (estratégia C):
+a janela é fatiada em 5 sub-intervalos e cada um entra com as próprias
+estatísticas, na ordem. É o que permite codificar "a rotação continua depois da
+3ª pisada", que é a diferença de domínio entre os dois passos — o giro em linha
+tem 5 pisadas e roda até fechar as 5, a abertura tem 3 marcações e logo vem a
+pausa. Ganho de 0,941 → 0,959 na floresta.
+
+### Onde ainda erra
+
+- **A lacuna entre o teto e o embarcável é real: 0,959 contra 0,884.** A floresta
+  ganha por capturar interação entre features ("yaw alto no 4º sub-intervalo E pé
+  fechado no 5º"), e árvore não converte para TFLite sem op custom. O número que
+  vale para o app é **0,884**, não o da floresta. Fechar essa diferença por
+  destilação (treinar a rede nas probabilidades da floresta) é o próximo passo
+  natural e não foi feito aqui.
+- **O ganho se concentra onde o erro é mais caro, mas a abertura segue sendo o
+  ponto fraco.** No modelo embarcável, a abertura tem f1 0,73 e 37 das suas 128
+  janelas vão para giro em linha; na volta, 24 das 177 janelas de giro em linha
+  vão para abertura. Toda a confusão residual está nesse par — nenhuma janela de
+  abertura ou de giro em linha é confundida com os outros quatro passos.
+- **A pior dobra do LOPO fica bem abaixo da média.** No embarcável, a média de
+  0,884 vem de dobras entre 0,765 e 0,957; no teto, de dobras entre 0,850 e 1,000
+  (desvio 0,053). No binário abertura × giro em linha, dois participantes puxam
+  para baixo: 0,88 e 0,74, contra 0,98–1,00 nos outros cinco. Com 7 pessoas, uma
+  dobra ruim é 14% do resultado — "funciona" e "funciona para quem dança parecido
+  com o treino" não se distinguem ainda.
+- **A auditoria não encontrou rótulo otimista.** As 14 gravações dos dois passos
+  difíceis foram inspecionadas por descritores de domínio (rotação total,
+  inversões por segundo, desaceleração no fim). Giro em linha mede 3,0–4,3 rad/s
+  de rotação contra 1,35–2,90 da abertura, sem nenhuma gravação de um passo
+  caindo na faixa típica do outro — as execuções são distintas e os rótulos se
+  sustentam. Uma gravação chama atenção: `p0/mov_abertura/r4`, com 0,13
+  inversões/s contra 0,89–1,38 das outras aberturas e um terço do tempo quase
+  parada. Parece execução lenta ou hesitante, e vale conferir no vídeo.
+- **Segmentar por ciclo do movimento foi pior que janela de duração fixa**
+  (0,939 contra 0,959). O motivo é que o ciclo tem de ser *estimado* do sinal: o
+  BPM da sessão não está no dataset. A estimativa por autocorrelação erra feio em
+  algumas gravações (1,6 s e 4,9 s para o mesmo passo). Com o BPM gravado no
+  rótulo, essa estratégia passa a usar um valor conhecido e merece nova medição.
+
+### O que falta para o número subir
+
+Em ordem de retorno esperado:
+
+1. **Mais participantes.** 7 pessoas, uma execução de cada passo por pessoa. É a
+   limitação dominante: a variação entre dobras (0,85–1,00) é maior que a
+   diferença entre as melhores configurações.
+2. **Gravar o BPM e o participante no rótulo.** O sufixo atual é
+   `|r<n>s<i>t<ms>`; `|p<id>r<n>s<i>t<ms>b<bpm>` resolve a segmentação de
+   participante na origem (hoje depende de um corte manual por horário) e troca o
+   ciclo estimado por conhecido. Vive dentro da coluna `Rotulo`, então não mexe no
+   contrato de 38 colunas da planilha. Ver `CaptureLabel.kt`.
+3. **Segunda câmera ou outro ângulo.** Todas as 43 gravações são de frente. A
+   rotação é justamente o que uma câmera frontal mede pior, e é o discriminador do
+   par difícil.
+4. **Destilação da floresta para a rede**, para recuperar os 0,075 de lacuna
+   entre o teto medido e o que embarca.
+
+## Fluxo de ponta a ponta
+
+1. **Coletar no app** — na tela de Treino, selecione um passo no seletor de
+   rótulo e use o botão "Gravar movimento". Amostra a 10 Hz e envia cada amostra
+   para a planilha (ver [`SheetsUploader.kt`](../../app/src/main/java/com/dancaai/app/export/SheetsUploader.kt)
+   e `local.properties`). Grave pelo menos 10 s por passo; abaixo de 5 s a
+   gravação é descartada no carregamento, por não conter um ciclo completo.
+
+2. **Instalar as dependências** (uma vez):
+
+   ```bash
+   cd training/movement_classifier
+   python -m venv .venv
+   .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+3. **Conferir o dataset** antes de treinar:
+
+   ```bash
+   python load_data.py
+   ```
+
+   Sem argumento, baixa o CSV público da planilha. Imprime uma linha por
+   gravação com amostras, duração, taxa de amostragem e maior buraco, e congela
+   um snapshot em `data/`. **A taxa é o teste de sanidade da segmentação**: o app
+   amostra a 10 Hz, então qualquer gravação muito acima disso significa que duas
+   gravações distintas foram fundidas numa chave (ver [Armadilhas](#armadilhas)).
+   Para usar um CSV já baixado: `python load_data.py data/capturas.csv`.
+
+4. **Treinar e avaliar:**
+
+   ```bash
+   python train.py
+   ```
+
+   Roda a varredura das quatro estratégias de janelamento × dois modelos, sempre
+   sob LOPO, imprime matriz de confusão, f1 por passo, voto majoritário por
+   gravação, acurácia por dobra, a auditoria do par difícil e o controle de
+   calibração. Salva o melhor modelo em `models/movement_classifier.keras` e a
+   ordem das features em `models/movement_classifier_meta.json`.
+
+5. **Exportar para TFLite:**
+
+   ```bash
+   python export_tflite.py
+   ```
+
+   Gera `models/movement_classifier.tflite`, confere que o modelo convertido
+   responde igual ao Keras e imprime o contrato de integração — a ordem exata das
+   entradas e das saídas, que é o que o lado Kotlin precisa reproduzir.
+
+## Como o dataset é interpretado
+
+As 38 colunas da planilha e o formato do rótulo estão documentados no
+[README do projeto](../../README.md#gravação-de-movimento). O que este módulo
+acrescenta:
+
+- **Uma amostra do classificador é uma janela de tempo, não uma pose.** Balanço,
+  giro invertido e giro em linha passam pelas mesmas poses em instantes
+  diferentes; o que separa é a trajetória e a posição dela no compasso.
+- **O eixo de tempo é o `t<ms>` do rótulo, não a coluna `Timestamp`.** O
+  Timestamp tem resolução de 1 segundo e a gravação amostra a 10 Hz, então dez
+  amostras compartilham o mesmo valor. O Timestamp serve só para segmentar
+  participante.
+- **A identidade de uma gravação é a tripla (participante, passo, `r`).** O
+  contador `r` do [`MovementRecorder`](../../app/src/main/java/com/dancaai/app/analysis/MovementRecorder.kt)
+  reinicia a cada participante, então `mov_balanco|r1` existe sete vezes na
+  planilha.
+- **Janelas da mesma gravação não são exemplos independentes.** Com passo de
+  0,5 s, janelas vizinhas são quase a mesma coisa. Agrupar por participante na
+  validação resolve, porque uma gravação pertence a um participante só.
+
+### Armadilhas
+
+Duas, já corrigidas em `load_data.py`, que invalidam o resultado se voltarem:
+
+1. **A segmentação por intervalo de 5 minutos funde dois participantes.** Na
+   coleta de 04/11/2026 duas pessoas se seguiram com menos de 5 minutos de
+   intervalo. Com o `r` repetido entre elas, `p3/mov_base1/r2` juntava a gravação
+   de uma às 21:09:49 com a da outra às 21:14:12, numa chave só. Daí o corte
+   manual em `2026-11-04 21:13:30` (`CORTE_MANUAL`), que separa as duas e fecha em
+   **7 participantes, 44 gravações**. Sem o corte, duas pessoas atravessam treino
+   e teste e o número mede memorização. O sintoma é a taxa aparente: 18–20 Hz em
+   vez de 10 Hz.
+2. **Uma gravação degenerada.** `p0/mov_giro_linha/r6` tem 2,2 s e 23 amostras —
+   menos de um ciclo até no andamento mais lento que o metrônomo permite (60 BPM).
+   É descartada, deixando **43 gravações e 5.444 amostras**.
+
+### Calibração do yaw: uma dependência medida, não assumida
+
+O sinal de rotação é calibrado em radianos dividindo `|dx|` pelo percentil 95 da
+própria gravação e aplicando `arcsin`. Isso é calibração não supervisionada — não
+olha o rótulo — mas usa a gravação inteira para normalizar cada quadro dela,
+inclusive quadros que, na validação, estão do lado do teste.
+
+Por isso `train.py` mede as duas versões lado a lado. Resultado: 0,941 com
+calibração contra **0,918 sem** (B@3 s, floresta). A calibração ajuda pouco e não
+sustenta o resultado — a conclusão vale com ou sem ela.
+
+No app, a referência equivalente deve vir do enquadramento frontal inicial (guia
+de câmera), medida uma vez por sessão, e não da janela corrente.
+
+## Estratégias de janelamento avaliadas
+
+Todas medidas sob a mesma validação, para a comparação ser contra a mesma régua.
+Detalhe de cada uma no cabeçalho de [`features.py`](features.py).
+
+| | descrição | melhor acurácia por janela |
+|---|---|---|
+| A | janela fixa, estatísticas sobre coordenadas normalizadas pelo **span de ombros** — reprodução do teste exploratório | 0,794 |
+| B | idem, sobre os sinais normalizados pelo **tronco**, com yaw assinado | 0,949 |
+| C | **ordem temporal preservada**: 5 sub-intervalos, cada um com as próprias estatísticas | **0,959** |
+| D | janela de **um ciclo** do movimento, estimado do sinal, reamostrada | 0,939 |
+
+## Próximos passos (fora deste módulo)
+
+- Embarcar o `.tflite` em `app/src/main/assets/` e rodar inferência via
+  `org.tensorflow:tensorflow-lite`, montando as features em Kotlin na ordem que
+  `export_tflite.py` imprime. **O app não deve decidir por uma janela só**: a
+  acurácia por gravação acima vem de voto majoritário entre as janelas da
+  execução, e é essa a decisão que corresponde à experiência de uso.
+- Modo **Livre** (diz qual passo está sendo feito e se está correto) e modo
+  **Desafio** (sequência pré-definida, diz se acertou), previstos no plano de
+  trabalho. O modo Livre precisa de um mínimo de confiança antes de mostrar um
+  passo, senão a tela troca de rótulo a cada janela durante a transição.

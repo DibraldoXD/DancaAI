@@ -19,5 +19,12 @@ training/posture_classifier/data/*
 !training/posture_classifier/data/.gitkeep
 training/posture_classifier/models/*
 !training/posture_classifier/models/.gitkeep
+training/movement_classifier/data/*
+!training/movement_classifier/data/.gitkeep
+training/movement_classifier/models/*
+!training/movement_classifier/models/.gitkeep
+# Ambientes virtuais e logs de execucao dos modulos de treino
+training/*/.venv/
+training/*/*.log
 __pycache__/
 *.pyc
