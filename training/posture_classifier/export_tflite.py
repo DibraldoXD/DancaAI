@@ -1,6 +1,6 @@
 """
 Converte o modelo Keras treinado (models/posture_classifier.keras) pro formato
-TFLite, pronto pra embarcar no app Android (A.1.4 do cronograma do TCC02).
+TFLite, pronto pra embarcar no app Android (A.1.3 do cronograma do TCC02).
 
 Uso:
     python export_tflite.py

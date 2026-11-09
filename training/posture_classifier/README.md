@@ -1,4 +1,4 @@
-# Classificador de postura (TFLite) — A.1.4
+# Classificador de postura (TFLite) — A.1.3
 
 Estrutura de treino do classificador embarcado de postura previsto na F.1 do
 cronograma do TCC02: "classificador TFLite embarcado treinado sobre coordenadas xyz

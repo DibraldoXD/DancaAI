@@ -1,7 +1,7 @@
 """
 Carrega o CSV exportado da planilha de capturas (Google Sheets -> Arquivo -> Fazer
 download -> Valores separados por vírgula), valida as colunas esperadas e monta a
-matriz de features + rótulo pro treino do classificador de postura (A.1.4 do
+matriz de features + rótulo pro treino do classificador de postura (A.1.3 do
 cronograma do TCC02).
 
 Uso:

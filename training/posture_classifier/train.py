@@ -1,6 +1,6 @@
 """
 Treina o classificador de postura (MLP pequeno em Keras) sobre os dados rotulados
-manualmente na planilha e salva o modelo treinado em models/ (A.1.4 do cronograma
+manualmente na planilha e salva o modelo treinado em models/ (A.1.3 do cronograma
 do TCC02).
 
 Uso:
