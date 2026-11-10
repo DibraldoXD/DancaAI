@@ -1,8 +1,12 @@
 package com.dancaai.app
 
 import android.os.SystemClock
+import com.dancaai.app.analysis.PauseWindow
+import com.dancaai.app.analysis.WeightStateMachine
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import kotlin.math.abs
+import kotlin.math.exp
 
 enum class WeightLeg { LEFT, RIGHT, NEUTRAL }
 
@@ -17,21 +21,20 @@ data class WeightInfo(
 )
 
 /**
- * Transferência de peso em duas camadas:
+ * Transferência de peso: extrai os landmarks, suaviza e entrega a razão para a
+ * [WeightStateMachine], que decide o apoio confirmado e o que é erro de marcação.
  *
- *  1ª) leftRatio = distToRightAnkle / (distToLeft + distToRight)   [eixo X]
+ *  leftRatio = distToRightAnkle / (distToLeft + distToRight)   [eixo X]
  *      • 1.0 = quadril sobre tornozelo esquerdo → ESQUERDA
  *      • 0.0 = quadril sobre tornozelo direito  → DIREITA
- *      • Zona neutra: 0.40–0.60
+ *      • Zona neutra: 0.45–0.55, com histerese e permanência mínima (ver a máquina)
  *
- *  2ª) Desempate por Z dos tornozelos (só na zona neutra)
- *      • zD − zE > +Z_TIEBREAK → tornozelo D mais longe = E mais à frente → ESQUERDA
- *      • zD − zE < −Z_TIEBREAK → tornozelo E mais longe = D mais à frente → DIREITA
- *      Resolve o caso em que o corpo se move pra frente/trás: a perspectiva
- *      encolhe o leftRatio para a zona neutra, mas o Z ainda indica qual pé está
- *      à frente (e portanto com peso).
+ * A suavização é uma EMA por constante de tempo ([SMOOTHING_TAU_MS]) e não por frame:
+ * com ~30 Hz no app e 10 Hz nas gravações da planilha, um alpha fixo por frame daria
+ * filtros diferentes e a calibração offline não valeria para o aparelho.
  *
- * Validado em 18 capturas / 3 usuários: 18/18 corretos com as duas camadas.
+ * Os limiares de [WeightStateMachine.Config] são o ponto de partida (neutro 0,45–0,55);
+ * o valor final sai da calibração sobre as gravações de balanço, base 1 e base 2.
  */
 class StepCounter {
 
@@ -41,15 +44,15 @@ class StepCounter {
         private const val LEFT_ANKLE  = 27
         private const val RIGHT_ANKLE = 28
 
-        private const val UPPER_RATIO    = 0.60f   // acima → ESQUERDA  (camada 1)
-        private const val LOWER_RATIO    = 0.40f   // abaixo → DIREITA   (camada 1)
         private const val MIN_TOTAL_DIST = 0.008f  // evita divisão por zero
-        private const val Z_TIEBREAK    = 0.10f   // |zD−zE| mínimo para desempate (camada 2)
+        private const val DIR_THRESHOLD  = 0.002f
 
-        private const val ALPHA         = 0.35f   // EMA de suavização (~3 frames de lag)
-        private const val DIR_THRESHOLD = 0.002f
-        private const val HISTORY_SIZE  = 8
-        private const val ERROR_DISPLAY_FRAMES = 60
+        /** alpha = 1 − exp(−Δt/τ). τ = 77 ms reproduz o alpha de 0,35 do filtro antigo a 30 Hz. */
+        private const val SMOOTHING_TAU_MS = 77f
+        private const val MAX_SMOOTHING_DT_MS = 1_000L
+
+        /** Quanto tempo o aviso de erro fica na tela (antes: 60 frames). */
+        private const val ERROR_DISPLAY_MS = 2_000L
     }
 
     var counter: Int = 0
@@ -66,15 +69,17 @@ class StepCounter {
     var onWeightInfoChanged: ((info: WeightInfo) -> Unit)? = null
 
     /**
-     * Toda troca de perna de apoio, correta ou não, com o instante do frame que a
-     * revelou. É a referência do módulo de ritmo para comparar com as batidas.
+     * Toda troca de perna de apoio, correta ou não, com o instante em que ela COMEÇOU
+     * (não o do commit, que espera a permanência mínima). É a referência do módulo de
+     * ritmo para comparar com as batidas.
      */
     var onWeightTransition: ((leg: WeightLeg, atUptimeMs: Long) -> Unit)? = null
 
-    private val legHistory = ArrayDeque<WeightLeg>()
-    private var currentLeg = WeightLeg.NEUTRAL
-    private var errorCountdown = 0
+    private val machine = WeightStateMachine()
+    private val pauseWindow = PauseWindow()
+    private var errorShownUntilMs = Long.MIN_VALUE
 
+    private var lastFrameMs: Long? = null
     private var sHipCX:   Float? = null
     private var sHipCY:   Float? = null
     private var sAnkleLX: Float? = null
@@ -84,16 +89,34 @@ class StepCounter {
     private var prevHipCX: Float? = null
     private var prevHipCY: Float? = null
 
+    /**
+     * Informa a batida de pausa do metrônomo (1-2-3-Pausa). Enquanto a janela da
+     * pausa estiver aberta a máquina adia qualquer troca de perna: o pé livre
+     * encosta ou alivia ali e não é marcação. Ver [PauseWindow].
+     */
+    fun markPauseBeat(audibleAtMs: Long, intervalMs: Long, beatsPerBar: Int) =
+        pauseWindow.mark(audibleAtMs, intervalMs, beatsPerBar)
+
+    /** Metrônomo parado ou padrão sem pausa: volta a regra geral. */
+    fun clearPauseBeat() = pauseWindow.clear()
+
     fun process(result: PoseLandmarkerResult, atUptimeMs: Long = SystemClock.uptimeMillis()) {
-        if (result.landmarks().isEmpty()) { emitInfo(MovementDirection.NEUTRAL); return }
-        val lm = result.landmarks()[0]
+        val lm = result.landmarks().firstOrNull()
+        if (lm == null) { emitInfo(MovementDirection.NEUTRAL, atUptimeMs); return }
+        processLandmarks(lm, atUptimeMs)
+    }
 
-        val hipL   = lm.getOrNull(LEFT_HIP)    ?: run { emitInfo(MovementDirection.NEUTRAL); return }
-        val hipR   = lm.getOrNull(RIGHT_HIP)   ?: run { emitInfo(MovementDirection.NEUTRAL); return }
-        val ankleL = lm.getOrNull(LEFT_ANKLE)  ?: run { emitInfo(MovementDirection.NEUTRAL); return }
-        val ankleR = lm.getOrNull(RIGHT_ANKLE) ?: run { emitInfo(MovementDirection.NEUTRAL); return }
+    /** Ponto de entrada sem MediaPipe: os testes de unidade alimentam landmarks sintéticos. */
+    fun processLandmarks(lm: List<NormalizedLandmark>, atUptimeMs: Long) {
+        val hipL   = lm.getOrNull(LEFT_HIP)    ?: run { emitInfo(MovementDirection.NEUTRAL, atUptimeMs); return }
+        val hipR   = lm.getOrNull(RIGHT_HIP)   ?: run { emitInfo(MovementDirection.NEUTRAL, atUptimeMs); return }
+        val ankleL = lm.getOrNull(LEFT_ANKLE)  ?: run { emitInfo(MovementDirection.NEUTRAL, atUptimeMs); return }
+        val ankleR = lm.getOrNull(RIGHT_ANKLE) ?: run { emitInfo(MovementDirection.NEUTRAL, atUptimeMs); return }
 
-        fun ema(prev: Float?, cur: Float) = prev?.let { it * (1f - ALPHA) + cur * ALPHA } ?: cur
+        val dt = lastFrameMs?.let { (atUptimeMs - it).coerceIn(1L, MAX_SMOOTHING_DT_MS) }
+        val alpha = dt?.let { 1f - exp(-it / SMOOTHING_TAU_MS) } ?: 1f
+        lastFrameMs = atUptimeMs
+        fun ema(prev: Float?, cur: Float) = prev?.let { it + (cur - it) * alpha } ?: cur
 
         prevHipCX = sHipCX
         prevHipCY = sHipCY
@@ -112,26 +135,8 @@ class StepCounter {
         val distL     = abs(hipX - ankLX)
         val distR     = abs(hipX - ankRX)
         val totalDist = distL + distR
-
-        val newLeg = if (totalDist > MIN_TOTAL_DIST) {
-            val leftRatio = distR / totalDist   // 1.0 = peso esquerda, 0.0 = peso direita
-            when {
-                leftRatio > UPPER_RATIO -> WeightLeg.LEFT
-                leftRatio < LOWER_RATIO -> WeightLeg.RIGHT
-                else -> {
-                    // Zona neutra: desempate pelo Z dos tornozelos.
-                    // Quando o corpo avança/recua, a perspectiva encolhe o leftRatio,
-                    // mas o Z indica qual pé está à frente (e portanto com peso).
-                    // zD − zE > 0 → tornozelo D mais longe = pé E à frente → ESQUERDA
-                    val zDiff = sAnkleRZ!! - sAnkleLZ!!
-                    when {
-                        zDiff >  Z_TIEBREAK -> WeightLeg.LEFT
-                        zDiff < -Z_TIEBREAK -> WeightLeg.RIGHT
-                        else                -> WeightLeg.NEUTRAL
-                    }
-                }
-            }
-        } else WeightLeg.NEUTRAL
+        val leftRatio = if (totalDist > MIN_TOTAL_DIST) distR / totalDist else null  // 1.0 = peso esquerda
+        val zDiff     = sAnkleRZ!! - sAnkleLZ!!
 
         // Direção pelo delta do quadril suavizado
         val direction: MovementDirection = prevHipCX?.let { px ->
@@ -146,35 +151,30 @@ class StepCounter {
             }
         } ?: MovementDirection.NEUTRAL
 
-        // Transição + histórico de ciclo
-        if (newLeg != WeightLeg.NEUTRAL && newLeg != currentLeg) {
-            val isError = legHistory.isNotEmpty() && legHistory.last() == newLeg
-            if (isError) {
+        val transition = machine.update(leftRatio, zDiff, atUptimeMs, inPause = pauseWindow.contains(atUptimeMs))
+        if (transition != null && transition.leg != WeightLeg.NEUTRAL) {
+            if (transition.isError) {
                 errorCount++
-                errorCountdown = ERROR_DISPLAY_FRAMES
+                errorShownUntilMs = atUptimeMs + ERROR_DISPLAY_MS
             } else {
                 correctCount++
                 counter++
-                stage = if (newLeg == WeightLeg.LEFT) "esquerda" else "direita"
+                stage = if (transition.leg == WeightLeg.LEFT) "esquerda" else "direita"
                 checkReps()
                 onStageChanged?.invoke(stage!!, counter)
             }
-            if (legHistory.size >= HISTORY_SIZE) legHistory.removeFirst()
-            legHistory.addLast(newLeg)
-            onWeightTransition?.invoke(newLeg, atUptimeMs)
+            onWeightTransition?.invoke(transition.leg, transition.startedAtMs)
         }
 
-        currentLeg = newLeg
-        emitInfo(direction)
+        emitInfo(direction, atUptimeMs)
     }
 
-    private fun emitInfo(direction: MovementDirection) {
-        if (errorCountdown > 0) errorCountdown--
+    private fun emitInfo(direction: MovementDirection, atMs: Long) {
         onWeightInfoChanged?.invoke(
             WeightInfo(
-                leg          = currentLeg,
+                leg          = machine.state,
                 direction    = direction,
-                showError    = errorCountdown > 0,
+                showError    = atMs < errorShownUntilMs,
                 correctCount = correctCount,
                 errorCount   = errorCount
             )
@@ -188,8 +188,9 @@ class StepCounter {
     fun reset() {
         counter = 0; stage = null
         correctCount = 0; errorCount = 0
-        currentLeg = WeightLeg.NEUTRAL
-        legHistory.clear(); errorCountdown = 0
+        machine.reset()
+        errorShownUntilMs = Long.MIN_VALUE
+        lastFrameMs = null
         sHipCX = null; sHipCY = null
         sAnkleLX = null; sAnkleRX = null
         sAnkleLZ = null; sAnkleRZ = null
