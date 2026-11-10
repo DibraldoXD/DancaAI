@@ -21,6 +21,26 @@ data class WeightInfo(
 )
 
 /**
+ * Um frame do módulo de peso, para diagnóstico: o que entrou, o que a máquina decidiu e
+ * se a pausa do compasso estava aberta. Só é montado quando [StepCounter.onTrace] está
+ * ligado (build debug).
+ */
+data class WeightTrace(
+    val atMs: Long,
+    /** Razão com as posições cruas deste frame (sem suavização); `null` se tornozelos juntos. */
+    val rawRatio: Float?,
+    /** Razão suavizada, a que a máquina de estados lê. */
+    val smoothRatio: Float?,
+    val zDiff: Float,
+    /** Apoio confirmado depois deste frame. */
+    val state: WeightLeg,
+    /** Apoio confirmado NESTE frame, ou `null` se não houve troca. */
+    val transition: WeightLeg?,
+    val isError: Boolean,
+    val inPause: Boolean,
+)
+
+/**
  * Transferência de peso: extrai os landmarks, suaviza e entrega a razão para a
  * [WeightStateMachine], que decide o apoio confirmado e o que é erro de marcação.
  *
@@ -74,6 +94,9 @@ class StepCounter {
      * ritmo para comparar com as batidas.
      */
     var onWeightTransition: ((leg: WeightLeg, atUptimeMs: Long) -> Unit)? = null
+
+    /** Diagnóstico por frame; `null` (padrão) não custa nada. Ligado só no build debug. */
+    var onTrace: ((WeightTrace) -> Unit)? = null
 
     private val machine = WeightStateMachine()
     private val pauseWindow = PauseWindow()
@@ -151,7 +174,25 @@ class StepCounter {
             }
         } ?: MovementDirection.NEUTRAL
 
-        val transition = machine.update(leftRatio, zDiff, atUptimeMs, inPause = pauseWindow.contains(atUptimeMs))
+        val inPause = pauseWindow.contains(atUptimeMs)
+        val transition = machine.update(leftRatio, zDiff, atUptimeMs, inPause = inPause)
+        onTrace?.let { trace ->
+            val rawL = abs((hipL.x() + hipR.x()) / 2f - ankleL.x())
+            val rawR = abs((hipL.x() + hipR.x()) / 2f - ankleR.x())
+            val rawTotal = rawL + rawR
+            trace(
+                WeightTrace(
+                    atMs = atUptimeMs,
+                    rawRatio = if (rawTotal > MIN_TOTAL_DIST) rawR / rawTotal else null,
+                    smoothRatio = leftRatio,
+                    zDiff = zDiff,
+                    state = machine.state,
+                    transition = transition?.leg,
+                    isError = transition?.isError == true,
+                    inPause = inPause,
+                ),
+            )
+        }
         if (transition != null && transition.leg != WeightLeg.NEUTRAL) {
             if (transition.isError) {
                 errorCount++

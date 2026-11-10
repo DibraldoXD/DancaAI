@@ -340,6 +340,7 @@ fun TrainingScreen(
             if (!pausedState.value) {
                 accumulator.onBeat(audibleAtUptimeMs, current.beatIntervalMs)
             }
+            cameraViewRef.value?.traceBeat(idx, audibleAtUptimeMs)
             // a pausa do compasso não é avaliada: o módulo de peso adia as trocas dentro dela
             if (idx == current.beatPattern.pauseBeatIndex) {
                 cameraViewRef.value?.markPauseBeat(audibleAtUptimeMs, current.beatIntervalMs, labels.size)

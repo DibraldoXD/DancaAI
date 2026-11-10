@@ -2,6 +2,7 @@ package com.dancaai.app.camera
 
 import android.content.Context
 import android.util.AttributeSet
+import android.util.Log
 import android.widget.FrameLayout
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -11,6 +12,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.dancaai.app.AngleCalculator
+import com.dancaai.app.BuildConfig
 import com.dancaai.app.OverlayView
 import com.dancaai.app.PoseLandmarkerHelper
 import com.dancaai.app.PostureResult
@@ -18,7 +20,12 @@ import com.dancaai.app.PostureValidator
 import com.dancaai.app.StepCounter
 import com.dancaai.app.WeightInfo
 import com.dancaai.app.WeightLeg
+import com.dancaai.app.analysis.MarkingTraceLogger
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -103,6 +110,29 @@ class PoseCameraView @JvmOverloads constructor(
         // cuida apenas do que precisa estar ancorado no corpo.
         stepCounter.onWeightInfoChanged = { info -> onWeightInfo?.invoke(info) }
         stepCounter.onWeightTransition = { leg, at -> onWeightTransition?.invoke(leg, at) }
+        if (BuildConfig.DEBUG) startMarkingTrace()
+    }
+
+    private var traceLogger: MarkingTraceLogger? = null
+
+    /**
+     * Só no build debug: um CSV por sessão com o que o módulo de peso viu e decidiu em cada
+     * frame (ver [MarkingTraceLogger]). Fica em `Android/data/<pacote>/files/marcacao/` e sai
+     * do aparelho com `adb pull`. Falha aqui nunca derruba a câmera.
+     */
+    private fun startMarkingTrace() {
+        runCatching {
+            val dir = File(context.getExternalFilesDir(null), "marcacao").apply { mkdirs() }
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val logger = MarkingTraceLogger(File(dir, "marcacao_$stamp.csv").bufferedWriter())
+            traceLogger = logger
+            stepCounter.onTrace = logger::onFrame
+        }.onFailure { Log.w(MarkingTraceLogger.TAG, "Log de marcação indisponível", it) }
+    }
+
+    /** Batida do metrônomo no log de marcação (no-op fora do debug). */
+    fun traceBeat(beatIndex: Int, audibleAtMs: Long) {
+        traceLogger?.onBeat(beatIndex, audibleAtMs)
     }
 
     fun bind(owner: LifecycleOwner) {
@@ -207,6 +237,9 @@ class PoseCameraView @JvmOverloads constructor(
     }
 
     fun release() {
+        stepCounter.onTrace = null
+        traceLogger?.close()
+        traceLogger = null
         stepCounter.reset()
         runCatching {
             poseHelper?.clearPoseLandmarker()
