@@ -33,10 +33,18 @@ class WeightStateMachine(private val config: Config = Config()) {
         val lowerRatio: Float = 0.45f,
         /** Folga para SAIR de um apoio já confirmado. */
         val hysteresis: Float = 0.03f,
-        /** Tempo mínimo na zona de uma perna antes de confirmá-la. */
-        val dwellMs: Long = 80,
-        /** Tempo mínimo em neutro antes de confirmá-lo (mais longo: neutro curto é ruído). */
-        val neutralDwellMs: Long = 150,
+        /**
+         * Tempo mínimo na zona de uma perna antes de confirmá-la. 30 ms = dois quadros
+         * seguidos a 30 Hz: filtra o pico de um quadro só sem perder trocas rápidas.
+         * Valores maiores derrubavam o recall das trocas evidentes para ~84% (calibração).
+         */
+        val dwellMs: Long = 30,
+        /**
+         * Tempo mínimo em neutro antes de confirmá-lo. É este valor que controla os
+         * falsos erros: transferências parciais (o peso sobe só até ~0,5 e volta)
+         * passam menos que isso no centro. Calibração: 150 ms → 23 erros, 300 ms → 3.
+         */
+        val neutralDwellMs: Long = 300,
         /** Intervalo sem frames a partir do qual um candidato em andamento é descartado. */
         val maxGapMs: Long = 500,
         /** Desempate por z dos tornozelos na zona neutra. Desligado: z do MediaPipe é estimado. */

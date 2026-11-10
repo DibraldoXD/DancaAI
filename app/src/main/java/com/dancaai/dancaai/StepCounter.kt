@@ -53,8 +53,12 @@ data class WeightTrace(
  * com ~30 Hz no app e 10 Hz nas gravações da planilha, um alpha fixo por frame daria
  * filtros diferentes e a calibração offline não valeria para o aparelho.
  *
- * Os limiares de [WeightStateMachine.Config] são o ponto de partida (neutro 0,45–0,55);
- * o valor final sai da calibração sobre as gravações de balanço, base 1 e base 2.
+ * Os limiares de [WeightStateMachine.Config] foram calibrados sobre as gravações de
+ * balanço, base 1 e base 2 da planilha (24 gravações, 274 s, execuções corretas, ou seja,
+ * todo erro ali é falso positivo) com `modelo_postura/calibrar_marcacao.py`: 87 → 3 erros
+ * e neutro de 20,1% → 1,6% a 30 Hz. O que sobra são transferências parciais e pés juntos
+ * (ver o log de marcação do build debug). Não há gravação de erro verdadeiro, então a
+ * sensibilidade a erros reais não foi medida, só a especificidade.
  */
 class StepCounter {
 

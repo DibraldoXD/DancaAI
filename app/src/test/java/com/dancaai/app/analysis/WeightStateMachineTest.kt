@@ -89,13 +89,22 @@ class WeightStateMachineTest {
     }
 
     @Test
-    fun candidatoMaisCurtoQueAPermanencia_naoConfirma() {
+    fun picoDeUmQuadro_naoConfirma() {
         val m = WeightStateMachine()
         m.run(0, 300) { left }
-        // 2 frames em DIREITA = 33 ms de permanência, abaixo de 80 ms
-        val out = m.run(300, 1_000) { t -> if (t < 366) right else left }
+        // um único frame em DIREITA: 0 ms de permanência, abaixo dos 30 ms
+        val out = m.run(300, 1_000) { t -> if (t < 333) right else left }
         assertTrue(out.isEmpty())
         assertEquals(WeightLeg.LEFT, m.state)
+    }
+
+    @Test
+    fun doisQuadrosSeguidos_confirmam() {
+        val m = WeightStateMachine()
+        m.run(0, 300) { left }
+        // 2 frames a 33 ms = 33 ms de permanência, já acima dos 30 ms
+        val out = m.run(300, 1_000) { t -> if (t < 366) right else left }
+        assertEquals(listOf(WeightLeg.RIGHT, WeightLeg.LEFT), out.map { it.leg })
     }
 
     @Test
