@@ -113,6 +113,21 @@ shoulderSpan, zDiff, thresholdOmbrosEncurvados
 
 O Apps Script do lado do Google precisa esperar exatamente essas colunas, nessa ordem — se a URL não estiver funcionando, confira primeiro se o script ainda está publicado com acesso "Qualquer pessoa" e se aceita esse formato de `values`.
 
+#### Linha de desempenho da sessão (FPS e latência)
+
+No fim de cada sessão o app envia **uma linha extra** com o desempenho do pipeline de visão, ao lado das colunas de coordenadas: as 38 primeiras ficam vazias, exceto `Rotulo = metricas_sessao`, e 9 colunas novas (39–47) trazem o horário do fim da sessão e média, mediana, máximo e mínimo de FPS e de latência. A linha é montada por `PerformanceSummary.toSheetRow()` ([`PerformanceMeter.kt`](app/src/main/java/com/dancaai/app/analysis/PerformanceMeter.kt)); o mesmo resumo sai no Logcat com a tag `Desempenho`.
+
+Cabeçalho para colar nas células 39–47 da linha de legenda da planilha:
+
+```
+Sessao_Horario, FPS_Media, FPS_Mediana, FPS_Max, FPS_Min, Latencia_Media_ms, Latencia_Mediana_ms, Latencia_Max_ms, Latencia_Min_ms
+```
+
+- **FPS** são amostras de 1 s (quadros entregues na janela ÷ duração dela); pausa, retomada e troca de câmera descartam a janela em andamento.
+- **Latência** é por quadro, da captura até o resultado do MediaPipe pronto (conversão, rotação, fila e inferência). Não inclui o atraso do sensor até o `ImageProxy` nem o desenho na tela: é o piso da latência percebida, não o total.
+- Sessões com menos de 1 s de quadros medidos não enviam a linha.
+- Os scripts de treino descartam essa linha pelo filtro de rótulo, então ela não contamina os datasets.
+
 #### Seletor do que está sendo gravado
 
 A coluna `label` (`Rotulo` na planilha) não é mais descritiva: ela carrega o rótulo de treino, escolhido no seletor da tela de Treino (pílula "GRAVANDO", acima dos botões de captura). Antes do seletor o app mandava `"Captura #1"` e os rótulos de verdade eram digitados à mão na planilha depois da coleta — origem de erro silencioso, já que uma linha mal rotulada só aparece no treino.
