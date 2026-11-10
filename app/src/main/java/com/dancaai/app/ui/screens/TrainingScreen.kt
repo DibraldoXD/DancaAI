@@ -71,7 +71,9 @@ import com.dancaai.app.PostureValidator
 import com.dancaai.app.WeightInfo
 import com.dancaai.app.WeightLeg
 import android.os.SystemClock
+import android.util.Log
 import com.dancaai.app.analysis.MovementRecorder
+import com.dancaai.app.analysis.PerformanceMeter
 import com.dancaai.app.analysis.SessionAccumulator
 import com.dancaai.app.camera.PoseCameraView
 import com.dancaai.app.data.model.CaptureGroup
@@ -173,12 +175,15 @@ private fun List<NormalizedLandmark>.toSnapshot(label: String): DebugSnapshot {
     )
 }
 
+/** Horário no formato da coluna Timestamp da planilha. */
+private fun sheetTimestamp(): String =
+    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        .format(java.util.Date())
+
 /** Uma linha pro Google Sheets, na mesma ordem sempre — ver SheetsUploader/README. */
 private fun DebugSnapshot.toSheetRow(): List<Any> {
-    val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-        .format(java.util.Date())
     return listOf(
-        timestamp, label,
+        sheetTimestamp(), label,
         nose.x, nose.y, nose.z,
         leftEar.x, leftEar.y, leftEar.z,
         rightEar.x, rightEar.y, rightEar.z,
@@ -262,10 +267,35 @@ fun TrainingScreen(
     val configState = rememberUpdatedState(config)
     val captureLabelState = rememberUpdatedState(captureLabel)
 
+    // ── Desempenho do pipeline: FPS e latência, gravados uma vez no fim da sessão ──
+    val perfMeter = remember { PerformanceMeter() }
+    var performanceSent by remember { mutableStateOf(false) }
+
+    // Único caminho de saída da sessão: manda o resumo de desempenho pra planilha (uma
+    // linha, ao lado das colunas de coordenadas) e só então chama onEnd. O envio usa um
+    // escopo independente da tela, que seria cancelado pela navegação logo em seguida.
+    fun endSession() {
+        if (!performanceSent) {
+            performanceSent = true
+            perfMeter.summary()?.let { s ->
+                Log.i(
+                    "Desempenho",
+                    "frames=${s.frames} fps(media/mediana/max/min)=" +
+                        "%.1f/%.1f/%.1f/%.1f latencia_ms(media/mediana/max/min)=%.1f/%.1f/%d/%d".format(
+                            s.fpsMean, s.fpsMedian, s.fpsMax, s.fpsMin,
+                            s.latencyMeanMs, s.latencyMedianMs, s.latencyMaxMs, s.latencyMinMs,
+                        ),
+                )
+                SheetsUploader.uploadDetached(s.toSheetRow(sheetTimestamp()))
+            }
+        }
+        onEnd(elapsed, accumulator.snapshot())
+    }
+
     // Encerrar com capturas pendentes abre primeiro a revisão de debug; sem elas,
     // fecha a sessão direto. Vale tanto pro botão quanto pro fim do cronômetro.
     fun finish() {
-        if (snapshots.isEmpty()) onEnd(elapsed, accumulator.snapshot()) else showDebugResults = true
+        if (snapshots.isEmpty()) endSession() else showDebugResults = true
     }
 
     LaunchedEffect(paused) {
@@ -310,6 +340,10 @@ fun TrainingScreen(
             if (!pausedState.value) {
                 accumulator.onBeat(audibleAtUptimeMs, current.beatIntervalMs)
             }
+            // a pausa do compasso não é avaliada: o módulo de peso adia as trocas dentro dela
+            if (idx == current.beatPattern.pauseBeatIndex) {
+                cameraViewRef.value?.markPauseBeat(audibleAtUptimeMs, current.beatIntervalMs, labels.size)
+            }
             when {
                 continuousCapturing -> {
                     captureAndUpload(CaptureMeta.Beat(continuousCycleCount, labels[idx]))
@@ -326,12 +360,27 @@ fun TrainingScreen(
         }
         onDispose { metronome.stop() }
     }
-    LaunchedEffect(metronomeBpm) { metronome.bpm = metronomeBpm }
-    LaunchedEffect(config.beatPattern) { metronome.pattern = config.beatPattern }
+    // Mudar BPM ou padrão, parar o metrônomo ou pausar a sessão desalinha a janela da pausa
+    // até a próxima batida de pausa; melhor fechá-la do que avaliar com a grade antiga.
+    LaunchedEffect(metronomeBpm) {
+        metronome.bpm = metronomeBpm
+        cameraViewRef.value?.clearPauseBeat()
+    }
+    LaunchedEffect(config.beatPattern) {
+        metronome.pattern = config.beatPattern
+        cameraViewRef.value?.clearPauseBeat()
+    }
     // sem metrônomo tocando não há grade; o último veredito deixa de valer
-    LaunchedEffect(metronomePlaying) { if (!metronomePlaying) lastJudgement = null }
+    LaunchedEffect(metronomePlaying) {
+        if (!metronomePlaying) {
+            lastJudgement = null
+            cameraViewRef.value?.clearPauseBeat()
+        }
+    }
     // silencia o metrônomo quando a sessão é pausada, sem perder o BPM/estado "estava tocando"
     LaunchedEffect(paused) {
+        cameraViewRef.value?.clearPauseBeat()
+        perfMeter.discardWindow()   // o buraco da pausa não pode virar uma amostra de FPS baixíssimo
         if (paused) metronome.stop() else if (metronomePlaying) metronome.start()
     }
     // O relógio da gravação corre independente dos frames de pose: se dependesse
@@ -377,6 +426,9 @@ fun TrainingScreen(
                 factory = { ctx ->
                     PoseCameraView(ctx).also {
                         it.onPoseUnavailable = { poseUnavailable = true }
+                        it.onFrameTiming = { deliveredAtMs, latencyMs ->
+                            if (!pausedState.value) perfMeter.onFrame(deliveredAtMs, latencyMs)
+                        }
                         it.onPostureResult = { result ->
                             postureResult = result
                             if (!pausedState.value) accumulator.onPosture(result)
@@ -432,7 +484,10 @@ fun TrainingScreen(
             HudGlassButton(
                 icon = Icons.Rounded.FlipCameraAndroid,
                 contentDescription = "Alternar câmera",
-                onClick = { cameraViewRef.value?.switchCamera() },
+                onClick = {
+                    perfMeter.discardWindow()   // a troca recria o detector: janela de FPS inválida
+                    cameraViewRef.value?.switchCamera()
+                },
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
             )
 
@@ -555,7 +610,7 @@ fun TrainingScreen(
         if (showDebugResults) {
             DebugResultsOverlay(
                 snapshots = snapshots,
-                onClose = { onEnd(elapsed, accumulator.snapshot()) },
+                onClose = { endSession() },
             )
         }
     }

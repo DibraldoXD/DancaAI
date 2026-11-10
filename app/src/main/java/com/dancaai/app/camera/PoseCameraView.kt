@@ -78,6 +78,13 @@ class PoseCameraView @JvmOverloads constructor(
      */
     var onPoseFrame: ((frameTimeMs: Long) -> Unit)? = null
 
+    /**
+     * Um disparo por resultado do MediaPipe (com ou sem pessoa: a inferência rodou do
+     * mesmo jeito): instante da entrega e latência da captura até o resultado, na base
+     * de SystemClock.uptimeMillis. Alimenta o medidor de FPS e latência da sessão.
+     */
+    var onFrameTiming: ((deliveredAtMs: Long, latencyMs: Long) -> Unit)? = null
+
     /** Último frame de landmarks detectado; null quando nenhuma pessoa está no enquadramento. */
     var currentLandmarks: List<NormalizedLandmark>? = null
         private set
@@ -102,6 +109,13 @@ class PoseCameraView @JvmOverloads constructor(
         lifecycleOwner = owner
         startCamera()
     }
+
+    /** Batida de pausa do metrônomo: o módulo de peso não avalia troca de perna na janela dela. */
+    fun markPauseBeat(audibleAtMs: Long, intervalMs: Long, beatsPerBar: Int) =
+        stepCounter.markPauseBeat(audibleAtMs, intervalMs, beatsPerBar)
+
+    /** Metrônomo parado, pausado ou sem pausa no padrão: volta a regra geral de marcação. */
+    fun clearPauseBeat() = stepCounter.clearPauseBeat()
 
     fun switchCamera() {
         isFrontCamera = !isFrontCamera
@@ -157,6 +171,7 @@ class PoseCameraView @JvmOverloads constructor(
 
     override fun onResults(resultBundle: PoseLandmarkerHelper.ResultBundle) {
         post {
+            onFrameTiming?.invoke(resultBundle.deliveredAtMs, resultBundle.latencyMs)
             overlayView.setResults(
                 poseLandmarkerResults = resultBundle.results,
                 imageWidth = resultBundle.inputImageWidth,

@@ -22,8 +22,13 @@ enum class BeatPattern(
     val beatLabels: List<String>,
     /** Índice do tempo que recebe o clique distinto. */
     val distinctBeatIndex: Int,
+    /**
+     * Índice do tempo em que não há troca de perna esperada, ou `null` se o padrão
+     * não tem pausa. O módulo de peso não avalia marcação nessa janela.
+     */
+    val pauseBeatIndex: Int? = null,
 ) {
-    THREE_AND_PAUSE("1-2-3-Pausa", listOf("1", "2", "3", "Pausa"), 3),
+    THREE_AND_PAUSE("1-2-3-Pausa", listOf("1", "2", "3", "Pausa"), 3, pauseBeatIndex = 3),
     FOUR_EVEN("1-2-3-4", listOf("1", "2", "3", "4"), 0);
 
     val beatsPerBar: Int get() = beatLabels.size
