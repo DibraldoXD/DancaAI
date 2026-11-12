@@ -71,5 +71,8 @@ quando o modelo for embarcado (próximo passo, ainda não implementado).
   `org.tensorflow:tensorflow-lite` no `PoseCameraView`/`PostureValidator`, em
   paralelo ou substituindo as regras geométricas atuais.
 - Documentar a acurácia obtida (exigido no cronograma: "acurácia documentada").
-- Repetir a mesma estrutura para o classificador de movimentos (A.2.2, os 6 passos
-  do forró) quando chegar a hora — provavelmente em `training/movement_classifier/`.
+- O classificador de movimentos (A.2.2, os 6 passos do forró) já existe, com a mesma
+  estrutura, em [`training/movement_classifier/`](../movement_classifier/README.md).
+  Dois achados de lá valem para cá: normalizar pelo **comprimento do tronco** em vez
+  do span de ombros (o span colapsa quando a pessoa fica de perfil) e usar o
+  deslocamento de ombros **com sinal** em vez do módulo.

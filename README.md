@@ -176,6 +176,17 @@ Os tokens de postura são exatamente os que os scripts de `modelo_postura/` espe
 
 Como a mesma planilha recebe postura, movimento e verificação, os scripts de postura filtram `Rotulo` pelos quatro tokens `post_*` antes de montar o alvo. Sem esse filtro, uma linha `mov_*` ou `teste` entraria como **exemplo de postura boa** — o alvo é montado só por match positivo nos desvios, então o que não casa com nenhum é tratado como postura correta, sem erro e sem aviso.
 
+### Modelos treinados sobre a coleta
+
+Dois módulos de treino, com a mesma estrutura (`data/` e `models/` ignorados pelo git — são dados corporais de participantes e este repositório é público):
+
+| Módulo | Alvo | Estado |
+|---|---|---|
+| [`training/posture_classifier/`](training/posture_classifier/README.md) | postura (A.1.4) | estrutura de treino pronta, acurácia a documentar |
+| [`training/movement_classifier/`](training/movement_classifier/README.md) | os 6 passos de forró (A.2.2) | **0,939 por janela / 0,953 por gravação**, fora da amostra |
+
+O número do classificador de movimentos é leave-one-participant-out nos 7 participantes da coleta de 04/11/2026, contra 0,208 de chute na classe majoritária. Dois achados de lá valem para qualquer coisa que derive dessas coordenadas: normalizar pelo **comprimento do tronco** em vez do span de ombros (o span colapsa quando a pessoa fica de perfil) e usar o deslocamento de ombros **com sinal** em vez do módulo.
+
 ### Testes
 
 ```bash
