@@ -80,12 +80,15 @@ class PoseLandmarkerHelper(
     }
 
     private fun returnLivestreamResult(result: PoseLandmarkerResult, input: MPImage) {
+        val deliveredAt = SystemClock.uptimeMillis()
         listener.onResults(
             ResultBundle(
                 results = result,
                 inputImageWidth = input.width,
                 inputImageHeight = input.height,
                 frameTimeMs = result.timestampMs(),
+                deliveredAtMs = deliveredAt,
+                latencyMs = deliveredAt - result.timestampMs(),
             )
         )
     }
@@ -103,6 +106,14 @@ class PoseLandmarkerHelper(
         val inputImageHeight: Int,
         /** Instante de captura do frame, na base de SystemClock.uptimeMillis (ver detectLiveStream). */
         val frameTimeMs: Long,
+        /** Instante em que o resultado ficou pronto, na mesma base. */
+        val deliveredAtMs: Long = frameTimeMs,
+        /**
+         * Da captura do frame ao resultado do MediaPipe pronto: conversão para bitmap,
+         * rotação, fila e inferência. Não inclui o atraso do sensor até o ImageProxy nem
+         * o desenho na tela, então é o piso da latência percebida, não o total.
+         */
+        val latencyMs: Long = 0L,
     )
 
     interface LandmarkerListener {

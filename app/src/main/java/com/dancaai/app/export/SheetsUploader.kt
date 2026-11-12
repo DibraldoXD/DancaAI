@@ -4,6 +4,7 @@ import android.util.Log
 import com.dancaai.app.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -25,6 +26,12 @@ object SheetsUploader {
     private const val TIMEOUT_MS = 8_000
 
     val enabled: Boolean get() = BuildConfig.SHEETS_WEBHOOK_URL.isNotBlank()
+
+    /** Escopo que sobrevive à saída da tela: o envio do fim da sessão não pode ser cancelado por ela. */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Como [upload], mas independente do ciclo de vida de qualquer tela. */
+    fun uploadDetached(values: List<Any>) = upload(appScope, values)
 
     /** [values] vira uma linha na planilha, na ordem em que forem passados. */
     fun upload(scope: CoroutineScope, values: List<Any>) {
