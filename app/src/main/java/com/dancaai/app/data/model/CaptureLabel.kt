@@ -64,24 +64,77 @@ enum class CaptureView(val token: String, val display: String) {
 }
 
 /**
+ * Quem está sendo gravado, como código opaco e sequencial (`p01`, `p02`, …).
+ *
+ * Nunca nome nem iniciais: são dados corporais de participantes e o repositório
+ * é público. O código só precisa separar uma pessoa da outra dentro da coleta.
+ *
+ * Existe porque sem ele o agrupamento por pessoa tinha de ser inferido do
+ * Timestamp (`GAP_MINUTOS = 5` em `treinar_multilabel.py`), e duas pessoas
+ * gravadas em sequência viram um grupo só. A validação cruzada então mede
+ * memorização em vez de generalização entre pessoas — o número que mais importa
+ * defender na banca.
+ */
+data class ParticipantId(val number: Int) {
+
+    init {
+        require(number >= FIRST) { "participante deve ser >= $FIRST, era $number" }
+    }
+
+    /**
+     * Segmento que entra no token. Dois dígitos para ordenar como texto na
+     * planilha (`p10` depois de `p02`); acima de 99 a largura cresce sozinha, e
+     * o `\|p(\d+)` dos scripts de treino segue casando.
+     */
+    val token: String get() = "p%02d".format(number)
+
+    fun next(): ParticipantId = ParticipantId(number + 1)
+
+    /** `null` no primeiro participante — não há anterior a decrementar. */
+    fun previous(): ParticipantId? =
+        if (number > FIRST) ParticipantId(number - 1) else null
+
+    companion object {
+        const val FIRST = 1
+
+        /**
+         * Reconstrói o participante a partir do valor persistido, onde 0 é
+         * "nenhum armado" — o estado antes da primeira escolha, em que as
+         * capturas saem no formato antigo, sem o segmento.
+         */
+        fun ofPersisted(number: Int): ParticipantId? =
+            if (number >= FIRST) ParticipantId(number) else null
+    }
+}
+
+/**
  * Rótulo armado no seletor da tela de Treino, aplicado a cada captura enviada.
  *
- * Formato do token: `assunto@angulo`, com sufixo `|c<ciclo>t<tempo>` nas
- * capturas contínuas. O `@` e o `|` permitem que os scripts de treino filtrem
- * por prefixo (`startswith("post_boa")`) sem perder o metadado de compasso, que
- * é o que liga a captura ao tempo do metrônomo.
+ * Formato do token: `assunto@angulo`, com segmento `|p<NN>` do participante e
+ * sufixo `|c<ciclo>t<tempo>` nas capturas contínuas. O `@` e o `|` permitem que
+ * os scripts de treino filtrem por prefixo (`startswith("post_boa")`) sem perder
+ * o metadado de compasso, que é o que liga a captura ao tempo do metrônomo.
+ *
+ * A ordem dos segmentos é contrato com o dataset já coletado: o participante vem
+ * depois do ângulo e antes do metadado, de modo que `split("@")[1].split("|")[0]`
+ * continue devolvendo o ângulo e o filtro de trajetória `\|r\d` continue casando.
+ * Vindo no fim, as gravações de duas pessoas se interleavariam na ordenação da
+ * planilha, já que o contador `r` reinicia a cada participante — exatamente a
+ * colisão que o identificador existe para desfazer.
  */
 data class CaptureLabel(
     val subject: CaptureSubject = CaptureSubject.POSTURE_GOOD,
     val view: CaptureView = CaptureView.FRONT,
+    val participant: ParticipantId? = null,
 ) {
     /** Texto curto para a pílula do HUD — o que o usuário confere antes de gravar. */
     val display: String get() = "${subject.shortDisplay} · ${view.display}"
 
     /** Token da coluna `Rotulo`; [meta] distingue a origem da captura. */
-    fun token(meta: CaptureMeta? = null): String {
-        val base = "${subject.token}@${view.token}"
-        return if (meta == null) base else "$base|${meta.suffix()}"
+    fun token(meta: CaptureMeta? = null): String = buildString {
+        append(subject.token).append('@').append(view.token)
+        participant?.let { append('|').append(it.token) }
+        meta?.let { append('|').append(it.suffix()) }
     }
 }
 

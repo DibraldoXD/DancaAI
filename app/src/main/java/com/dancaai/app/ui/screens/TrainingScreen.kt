@@ -64,6 +64,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dancaai.app.audio.Metronome
 import com.dancaai.app.MovementDirection
 import com.dancaai.app.PostureResult
@@ -79,10 +81,12 @@ import com.dancaai.app.camera.PoseCameraView
 import com.dancaai.app.data.model.CaptureGroup
 import com.dancaai.app.data.model.CaptureLabel
 import com.dancaai.app.data.model.CaptureMeta
+import com.dancaai.app.data.model.CaptureSubject
 import com.dancaai.app.data.model.RhythmJudgement
 import com.dancaai.app.data.model.RhythmTiming
 import com.dancaai.app.data.model.SessionConfig
 import com.dancaai.app.data.model.SessionMetrics
+import com.dancaai.app.data.model.shortDisplay
 import com.dancaai.app.export.SheetsUploader
 import com.dancaai.app.ui.components.CaptureLabelPicker
 import com.dancaai.app.ui.components.CaptureLabelPill
@@ -90,6 +94,7 @@ import com.dancaai.app.ui.components.DcaFilledButton
 import com.dancaai.app.ui.components.DcaOutlinedButton
 import com.dancaai.app.ui.components.MetronomeControl
 import com.dancaai.app.ui.components.navigationBarsOrMinPadding
+import com.dancaai.app.ui.training.TrainingViewModel
 import com.dancaai.app.ui.theme.DcaTheme
 import com.dancaai.app.ui.theme.MonoFontFamily
 import com.dancaai.app.ui.theme.Shapes
@@ -214,6 +219,7 @@ fun TrainingScreen(
     onEnd: (elapsedSec: Int, metrics: SessionMetrics) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    viewModel: TrainingViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -242,8 +248,16 @@ fun TrainingScreen(
     // ── Seletor de coleta: o que está sendo gravado agora ──
     // O rótulo escolhido aqui é o valor que vai para a coluna Rotulo da planilha
     // e é lido direto pelos scripts de treino — ver CaptureLabel.
-    var captureLabel by remember { mutableStateOf(CaptureLabel()) }
+    var labelSelection by remember { mutableStateOf(CaptureLabel()) }
     var showLabelPicker by remember { mutableStateOf(false) }
+    // O participante vem do ViewModel, e não de um remember: perder a contagem
+    // ao reabrir a tela significaria gravar duas pessoas com o mesmo código.
+    val participant by viewModel.participant.collectAsStateWithLifecycle()
+    val captureLabel = labelSelection.copy(participant = participant)
+    // Pares (participante, passo) já gravados nesta tela. Repetir um é o sinal de
+    // que alguém esqueceu de trocar de participante entre duas pessoas — o erro
+    // que, na coleta de 04/11, fundiu dois participantes num grupo só.
+    val recordedPairs = remember { mutableSetOf<Pair<Int, CaptureSubject>>() }
 
     // ── Gravação de movimento: amostra a intervalo fixo enquanto ativa ──
     // Um toque avulso registra uma pose; um passo só se distingue de outro pela
@@ -552,6 +566,15 @@ fun TrainingScreen(
                         movementRecorder.stop()
                         recordingMovement = false
                     } else {
+                        val par = (participant?.number ?: 0) to captureLabel.subject
+                        if (!recordedPairs.add(par)) {
+                            Toast.makeText(
+                                context,
+                                "${participant?.token ?: "Sem participante"} já gravou " +
+                                    "${captureLabel.subject.shortDisplay} — trocou de pessoa?",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
                         // mesma base de tempo dos frames da câmera (uptimeMillis),
                         // senão a grade de amostragem nasce deslocada
                         movementRecorder.start(SystemClock.uptimeMillis())
@@ -602,7 +625,9 @@ fun TrainingScreen(
         if (showLabelPicker) {
             CaptureLabelPicker(
                 current = captureLabel,
-                onChange = { captureLabel = it },
+                onChange = { labelSelection = it },
+                onParticipantNext = viewModel::nextParticipant,
+                onParticipantPrevious = viewModel::previousParticipant,
                 onDismiss = { showLabelPicker = false },
             )
         }
